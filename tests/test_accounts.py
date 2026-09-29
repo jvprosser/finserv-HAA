@@ -3,7 +3,19 @@ from decimal import Decimal
 from app.accounts import build_detail_sql, build_list_sql, summarize
 from app.config import Settings
 from app.db import impala_connect_kwargs
+import cml_app
 from cml_app import listen_address
+
+
+def test_cml_serve_uses_a_thread_when_jupyter_loop_is_running(monkeypatch):
+    calls = []
+    monkeypatch.setattr("cml_app.uvicorn.run", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr("cml_app.asyncio.get_running_loop", lambda: object())
+    monkeypatch.setattr("cml_app.listen_address", lambda: ("127.0.0.1", 8100))
+
+    cml_app.serve()
+
+    assert calls == [{"app": "app.main:app", "host": "127.0.0.1", "port": 8100}]
 
 
 def test_cml_listens_on_loopback_and_cdsw_port(monkeypatch):

@@ -6,7 +6,9 @@ The Application run command is: python3 cml_app.py
 
 from __future__ import annotations
 
+import asyncio
 import os
+import threading
 
 import uvicorn
 
@@ -16,6 +18,20 @@ def listen_address() -> tuple[str, int]:
     return "127.0.0.1", port
 
 
-if __name__ == "__main__":
+def serve() -> None:
     host, port = listen_address()
-    uvicorn.run("app.main:app", host=host, port=port)
+    kwargs = {"app": "app.main:app", "host": host, "port": port}
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        uvicorn.run(**kwargs)
+        return
+    # Cloudera AI runs this file inside Jupyter, which already has an event loop.
+    # uvicorn.run() calls asyncio.run() and fails there, so run it on a thread.
+    thread = threading.Thread(target=uvicorn.run, kwargs=kwargs, daemon=False)
+    thread.start()
+    thread.join()
+
+
+if __name__ == "__main__":
+    serve()
