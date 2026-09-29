@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Held-away assets</title>
+  <style>
+    :root {
+      --ink: #1c2430;
+      --muted: #5c6670;
+      --line: #d9d3c7;
+      --paper: #f4f1ea;
+      --card: #fffdf8;
+      --teal: #0f3d4c;
+      --teal-2: #1f5c63;
+      --warn: #8a4b08;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font: 16px/1.45 "Segoe UI", "Helvetica Neue", sans-serif;
+    }
+    header, main { max-width: 980px; margin: 0 auto; padding: 24px 20px; }
+    header { padding-bottom: 0; }
+    h1 { font-size: 1.6rem; font-weight: 650; margin: 0 0 4px; }
+    h2 { font-size: 1.05rem; margin: 0 0 8px; }
+    p { margin: 0 0 8px; }
+    .sub { color: var(--muted); margin-bottom: 16px; }
+    nav { display: flex; gap: 8px; margin: 16px 0; }
+    button, input, select, textarea {
+      font: inherit;
+      color: inherit;
+    }
+    button {
+      background: var(--teal);
+      color: white;
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+    button.secondary, button[aria-pressed="false"] {
+      background: transparent;
+      color: var(--teal);
+      border: 1px solid var(--teal);
+    }
+    button:disabled { opacity: 0.45; cursor: default; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: white;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 8px; }
+    .evidence { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+    .pill {
+      background: #efeae0;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 0.85rem;
+    }
+    .record { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .record a { color: var(--teal-2); }
+    .error { color: var(--warn); }
+    .hidden { display: none; }
+    details { margin-top: 18px; }
+    .rule { margin-bottom: 18px; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Held-away assets</h1>
+    <p class="sub">Next best actions for one client. Salesforce runs only when a button is used.</p>
+    <nav>
+      <button id="tab-client" type="button">Client</button>
+      <button id="tab-rules" class="secondary" type="button" aria-pressed="false">Rules</button>
+    </nav>
+  </header>
+  <main>
+    <div class="row">
+      <div>
+        <label for="api-key">API key</label>
+        <input id="api-key" type="password" autocomplete="off">
+      </div>
+      <div>
+        <label for="client-id">Client id</label>
+        <input id="client-id" value="C123">
+      </div>
+      <button id="load" type="button">Load client</button>
+    </div>
+    <p id="banner" class="error"></p>
+
+    <section id="client-view">
+      <div id="summary"></div>
+      <div id="cards"></div>
+      <details>
+        <summary>Waiting on history</summary>
+        <div id="waiting"></div>
+      </details>
+    </section>
+
+    <section id="rules-view" class="hidden">
+      <p class="sub">Edits are saved to the YAML catalog. Event names stay fixed. A bad CEL expression is rejected and the file is left unchanged.</p>
+      <div id="rule-forms"></div>
+      <label for="yaml">YAML</label>
+      <textarea id="yaml" spellcheck="false"></textarea>
+      <p class="actions" style="margin-top:12px">
+        <button id="save-rules" type="button">Save rules</button>
+        <span id="rules-msg"></span>
+      </p>
+    </section>
+  </main>
+  <script>
+    const ACTION_ORDER = { create_opportunity: 0, create_task: 1, update_account: 2 };
+    const keyInput = document.querySelector("#api-key");
+    const clientInput = document.querySelector("#client-id");
+    const banner = document.querySelector("#banner");
+    const summary = document.querySelector("#summary");
+    const cards = document.querySelector("#cards");
+    const waiting = document.querySelector("#waiting");
+    const yamlBox = document.querySelector("#yaml");
+    const ruleForms = document.querySelector("#rule-forms");
+    const rulesMsg = document.querySelector("#rules-msg");
+    let ruleEvents = [];
+    let rawDirty = false;
+
+    keyInput.value = sessionStorage.getItem("haa-api-key") || "";
+    keyInput.addEventListener("change", () => sessionStorage.setItem("haa-api-key", keyInput.value));
+
+    document.querySelector("#tab-client").onclick = () => show("client");
+    document.querySelector("#tab-rules").onclick = () => { show("rules"); loadRules(); };
+    document.querySelector("#load").onclick = loadClient;
+    document.querySelector("#save-rules").onclick = saveRules;
+    yamlBox.addEventListener("input", () => { rawDirty = true; });
+
+    function show(which) {
+      document.querySelector("#client-view").classList.toggle("hidden", which !== "client");
+      document.querySelector("#rules-view").classList.toggle("hidden", which !== "rules");
+      document.querySelector("#tab-client").classList.toggle("secondary", which !== "client");
+      document.querySelector("#tab-rules").classList.toggle("secondary", which !== "rules");
+    }
+
+    function headers() {
+      return { Authorization: "Bearer " + keyInput.value, "Content-Type": "application/json" };
+    }
+
+    async function api(path, options) {
+      const response = await fetch(path, { ...options, headers: { ...headers(), ...(options && options.headers) } });
+      const text = await response.text();
+      let body = null;
+      if (text) {
+        try { body = JSON.parse(text); } catch (err) { body = { detail: text }; }
+      }
+      if (!response.ok) {
+        const error = new Error("request failed");
+        error.status = response.status;
+        error.body = body;
+        throw error;
+      }
+      return body;
+    }
+
+    function detailText(error) {
+      const detail = error.body && error.body.detail;
+      if (typeof detail === "string") return detail;
+      if (Array.isArray(detail)) {
+        return detail.map((item) => (item.event_name ? item.event_name + ": " : "") + item.message).join("; ");
+      }
+      return "Request failed (" + error.status + ")";
+    }
+
+    async function loadClient() {
+      banner.textContent = "";
+      summary.innerHTML = "";
+      cards.innerHTML = "";
+      waiting.innerHTML = "";
+      const clientId = clientInput.value.trim();
+      try {
+        const [worth, events] = await Promise.all([
+          api("/v1/accounts/summary"),
+          api("/v1/clients/" + encodeURIComponent(clientId) + "/events")
+        ]);
+        renderSummary(worth);
+        renderEvents(events.events || []);
+      } catch (error) {
+        banner.textContent = detailText(error);
+      }
+    }
+
+    function renderSummary(worth) {
+      const rows = (worth.currencies || []).map((item) =>
+        "<p><strong>" + item.currency + " net worth " + item.net_worth + "</strong> · assets " +
+        item.assets + " · liabilities " + item.liabilities + "</p>"
+      );
+      summary.innerHTML = rows.join("") || "<p class='sub'>No balances.</p>";
+    }
+
+    function renderEvents(events) {
+      const matched = events.filter((event) => event.status === "matched")
+        .sort((a, b) => ACTION_ORDER[a.action] - ACTION_ORDER[b.action]);
+      const held = events.filter((event) => event.status === "insufficient_data");
+      cards.innerHTML = matched.map(cardHtml).join("") || "<p class='sub'>No matched actions.</p>";
+      waiting.innerHTML = held.map((event) =>
+        "<p><strong>" + event.event_name + "</strong> · missing " + (event.missing || []).join(", ") + "</p>"
+      ).join("") || "<p class='sub'>Every rule had the history it needs.</p>";
+      matched.forEach((event) => {
+        const node = cards.querySelector("[data-event='" + event.event_name + "']");
+        const button = node.querySelector("button");
+        button.onclick = () => runAction(event, node);
+        loadRecord(event, node);
+      });
+    }
+
+    function cardHtml(event) {
+      const evidence = Object.entries(event.evidence || {}).map(([name, value]) =>
+        "<span class='pill'>" + name + " " + value + "</span>"
+      ).join("");
+      const disabled = event.sfdc_action && event.sfdc_action.enabled ? "" : "disabled";
+      const label = event.sfdc_action ? event.sfdc_action.label : "Salesforce";
+      return "<article class='card' data-event='" + event.event_name + "'>" +
+        "<p class='meta'>" + event.action + "</p>" +
+        "<h2>" + titleCase(event.event_name) + "</h2>" +
+        "<p>" + escapeHtml(event.business_opportunity) + "</p>" +
+        "<p class='sub'>" + escapeHtml(event.suggested_next_steps) + "</p>" +
+        "<div class='evidence'>" + evidence + "</div>" +
+        "<div class='actions'><button type='button' " + disabled + ">" + label + "</button>" +
+        "<span class='meta action-msg'></span></div>" +
+        "<div class='record'></div></article>";
+    }
+
+    async function loadRecord(event, node) {
+      try {
+        const record = await api(event.sfdc_action.view_path);
+        node.querySelector(".record").innerHTML = recordHtml(record);
+      } catch (error) {
+        if (error.status !== 404) node.querySelector(".action-msg").textContent = detailText(error);
+      }
+    }
+
+    async function runAction(event, node) {
+      const message = node.querySelector(".action-msg");
+      message.textContent = "";
+      try {
+        const result = await api(event.sfdc_action.path, { method: "POST" });
+        message.textContent = result.result + " " + result.sobject + " " + result.id;
+        await loadRecord(event, node);
+      } catch (error) {
+        message.textContent = detailText(error);
+      }
+    }
+
+    function recordHtml(record) {
+      const link = record.url ? "<p><a href='" + record.url + "' target='_blank' rel='noreferrer'>Open in Salesforce</a></p>" : "";
+      if (record.sobject === "Opportunity") {
+        return "<div class='record'><p><strong>Opportunity</strong> " + escapeHtml(record.name || "") + "</p>" +
+          "<p>Stage " + escapeHtml(record.stage_name || "") + " · close " + escapeHtml(record.close_date || "") + "</p>" +
+          "<p>" + escapeHtml(record.description || "") + "</p>" + link + "</div>";
+      }
+      if (record.sobject === "Task") {
+        return "<div class='record'><p><strong>Task</strong> " + escapeHtml(record.subject || "") + "</p>" +
+          "<p>Status " + escapeHtml(record.status || "") + "</p>" +
+          "<p>" + escapeHtml(record.description || "") + "</p>" + link + "</div>";
+      }
+      return "<div class='record'><p><strong>Account</strong> " + escapeHtml(record.id || "") + "</p>" +
+        "<p>" + escapeHtml(record.description || "") + "</p>" + link + "</div>";
+    }
+
+    async function loadRules() {
+      rulesMsg.textContent = "";
+      try {
+        const body = await api("/v1/rules");
+        ruleEvents = body.events;
+        rawDirty = false;
+        yamlBox.value = body.yaml;
+        renderRuleForms();
+      } catch (error) {
+        rulesMsg.textContent = detailText(error);
+      }
+    }
+
+    function renderRuleForms() {
+      ruleForms.innerHTML = ruleEvents.map((event, index) =>
+        "<div class='card rule' data-index='" + index + "'>" +
+        "<h2>" + event.event_name + "</h2>" +
+        field("Description", "description", event.description, index) +
+        field("Business opportunity", "business_opportunity", event.business_opportunity, index) +
+        field("Next steps", "suggested_next_steps", event.suggested_next_steps, index) +
+        "<label>Action</label><select data-field='action' data-index='" + index + "'>" +
+        ["create_opportunity", "create_task", "update_account"].map((action) =>
+          "<option " + (action === event.action ? "selected" : "") + ">" + action + "</option>"
+        ).join("") +
+        "</select>" +
+        field("CEL", "cel", event.cel, index) +
+        "</div>"
+      ).join("");
+      ruleForms.querySelectorAll("textarea, select").forEach((input) => {
+        input.addEventListener("input", syncFromForm);
+        input.addEventListener("change", syncFromForm);
+      });
+    }
+
+    function field(label, name, value, index) {
+      return "<label>" + label + "</label><textarea data-field='" + name + "' data-index='" + index + "'>" +
+        escapeHtml(value) + "</textarea>";
+    }
+
+    function syncFromForm() {
+      ruleForms.querySelectorAll("[data-field]").forEach((input) => {
+        ruleEvents[input.dataset.index][input.dataset.field] = input.value;
+      });
+      rawDirty = false;
+      yamlBox.value = toYaml(ruleEvents);
+    }
+
+    function toYaml(events) {
+      return events.map((event) => {
+        const features = (event.features || []).map((name) => "    - " + name).join("\n");
+        return [
+          "- event_name: " + event.event_name,
+          "  action: " + event.action,
+          "  description: " + JSON.stringify(event.description),
+          "  business_opportunity: " + JSON.stringify(event.business_opportunity),
+          "  suggested_next_steps: " + JSON.stringify(event.suggested_next_steps),
+          "  features:\n" + features,
+          "  cel: " + JSON.stringify(event.cel)
+        ].join("\n");
+      }).join("\n\n") + "\n";
+    }
+
+    async function saveRules() {
+      rulesMsg.textContent = "";
+      if (!rawDirty) syncFromForm();
+      try {
+        const body = await api("/v1/rules", { method: "PUT", body: JSON.stringify({ yaml: yamlBox.value }) });
+        ruleEvents = body.events;
+        rawDirty = false;
+        yamlBox.value = body.yaml;
+        renderRuleForms();
+        rulesMsg.textContent = "Saved.";
+      } catch (error) {
+        rulesMsg.textContent = detailText(error);
+      }
+    }
+
+    function titleCase(name) {
+      return name.toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[char]));
+    }
+  </script>
+</body>
+</html>

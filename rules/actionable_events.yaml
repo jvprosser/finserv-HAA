@@ -1,0 +1,100 @@
+- event_name: CONTRIBUTIONS_STOPPED_OVER_90_DAYS
+  action: create_task
+  description: Contributions to a held-away account have stopped for over 90 days.
+  business_opportunity: Triggers a proactive client notification via Salesforce/mobile app asking them to re-authenticate their external institution credentials, ensuring continuous portfolio visibility and accurate wealth reporting.
+  suggested_next_steps: Create a task asking the client to review contributions and re-authenticate the external institution.
+  features:
+    - days_since_last_contribution
+  cel: days_since_last_contribution > 90
+
+- event_name: HELDAWAY_LIQUIDATION_DETECTED
+  action: create_opportunity
+  description: A large decrease in a held-away brokerage, IRA, or checking balance without a corresponding reinvestment.
+  business_opportunity: Alerts TIAA advisors that a client has cash sitting uninvested or has liquidated external positions, creating an immediate opportunity to offer managed portfolio options or deposit solutions.
+  suggested_next_steps: Offer a managed portfolio or a deposit solution.
+  features:
+    - max_balance_drop_30d
+    - holdings_value_change_30d
+  cel: max_balance_drop_30d > 25000.0 && holdings_value_change_30d <= 0.0
+
+- event_name: COMPETITOR_OUTFLOW_TREND
+  action: create_task
+  description: Recurring, growing transfers flowing into a competing external institution or high-yield savings account.
+  business_opportunity: Prompts an automated advisor task or targeted marketing campaign to offer TIAA's competitive deposit rates, cash management accounts, or fixed-income products before more capital leaves.
+  suggested_next_steps: Create a task to offer deposit rates, cash management, or fixed income before more capital leaves.
+  features:
+    - competitor_transfer_count_90d
+  cel: competitor_transfer_count_90d >= 3
+
+- event_name: RETIREMENT_INCOME_COMMENCED
+  action: create_opportunity
+  description: The first lump-sum or recurring deposit coming from an external pension provider, Social Security Administration, or external annuity provider.
+  business_opportunity: Flags that a client has officially entered the decumulation phase, triggering an advisor consultation for tax-efficient withdrawal strategies, guaranteed income solutions (annuities), or estate planning.
+  suggested_next_steps: Schedule an advisor consultation on withdrawal strategy, guaranteed income, or estate planning.
+  features:
+    - retirement_income_started
+  cel: retirement_income_started > 0
+
+- event_name: EMPLOYMENT_PROVIDER_CHANGED
+  action: create_task
+  description: A change in the source or entity name associated with regular direct deposit transactions in checking or savings accounts.
+  business_opportunity: Complements 401k monitoring by confirming a job change before rollover decisions are finalized, allowing TIAA advisors to reach out early regarding 401k/403b consolidation and benefit transfers.
+  suggested_next_steps: Reach out about 401k or 403b consolidation before the rollover decision is final.
+  features:
+    - payroll_source_changed
+  cel: payroll_source_changed > 0
+
+- event_name: HELDAWAY_DATA_CONNECTION_LOST
+  action: update_account
+  description: The latest daily account status is no longer ACTIVE, standing in for a Yodlee consent or credential update.
+  business_opportunity: Triggers a proactive client notification via Salesforce/mobile app asking them to re-authenticate their external institution credentials, ensuring continuous portfolio visibility and accurate wealth reporting.
+  suggested_next_steps: Update the Salesforce account and ask the client to re-authenticate the external institution.
+  features:
+    - disconnected_account_count
+  cel: disconnected_account_count > 0
+
+- event_name: HELDAWAY_CD_MATURED
+  action: create_task
+  description: A lump-sum inflow from an external bank time deposit or CD product.
+  business_opportunity: A matured CD is cash that may renew at the outside institution unless someone offers an alternative.
+  suggested_next_steps: Create a task to offer fixed income or an annuity before the CD auto-renews.
+  features:
+    - cd_maturity_inflow_amount
+  cel: cd_maturity_inflow_amount > 0.0
+
+- event_name: EDUCATION_EXPENSE_PHASE_STARTED
+  action: create_opportunity
+  description: Recurring outbound transfers to 529 plans or tuition debits from held-away accounts.
+  business_opportunity: Education spending is a reason to talk about college funding, tuition liquidity, and wealth transfer for dependents.
+  suggested_next_steps: Open an opportunity for college funding, tuition liquidity, or a wealth transfer conversation.
+  features:
+    - education_debit_count_90d
+  cel: education_debit_count_90d > 0
+
+- event_name: HIGH_COST_DEBT_LEVERAGE_DETECTED
+  action: create_opportunity
+  description: Repeated margin-interest or line-of-credit debits on held-away accounts.
+  business_opportunity: Leverage and high-cost debt are a reason to propose asset-backed lending, a portfolio line of credit, or consolidation.
+  suggested_next_steps: Open an opportunity for asset-backed lending or debt consolidation.
+  features:
+    - margin_interest_debit_count_90d
+  cel: margin_interest_debit_count_90d >= 3
+
+- event_name: REAL_ESTATE_LIQUIDITY_EVENT
+  action: create_opportunity
+  description: A large property-related wire, or mortgage payments that have stopped.
+  business_opportunity: A home purchase, sale, or mortgage payoff is a moment for real estate, estate planning, or tax-loss harvesting advice.
+  suggested_next_steps: Open an opportunity for the real estate or private wealth team.
+  features:
+    - large_real_estate_wire_amount
+    - mortgage_payments_stopped
+  cel: large_real_estate_wire_amount > 25000.0 || mortgage_payments_stopped > 0
+
+- event_name: IDLE_CASH_DRAG_IDENTIFIED
+  action: create_task
+  description: A held-away checking or savings balance stayed above 100000 on at least 90 daily snapshots.
+  business_opportunity: Idle cash in a low-yield account can move into cash management, a money market fund, or a managed portfolio.
+  suggested_next_steps: Create a task suggesting cash management, a money market fund, or dollar-cost averaging into a managed portfolio.
+  features:
+    - idle_cash_days_above_100k
+  cel: idle_cash_days_above_100k >= 90

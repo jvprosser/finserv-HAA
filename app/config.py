@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    impala_host: str = ""
+    impala_port: int = 21050
+    impala_database: str = "retirement_distributions"
+    impala_user: str = ""
+    impala_password: str = ""
+    impala_use_ssl: bool = True
+    impala_ca_cert: str = ""
+
+    client_id_column: str = ""
+    api_key: str = ""
+    demo_mode: bool = False
+
+    sfdc_login_url: str = "https://login.salesforce.com"
+    sfdc_client_id: str = ""
+    sfdc_client_secret: str = ""
+    sfdc_opportunity_stage: str = "Prospecting"
+    sfdc_account_external_id_field: str = ""
+    sfdc_api_version: str = "59.0"
+
+    rules_path: Path = ROOT / "rules" / "actionable_events.yaml"

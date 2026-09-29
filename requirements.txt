@@ -1,0 +1,17 @@
+fastapi==0.128.8
+eval_type_backport==0.4.0
+uvicorn==0.39.0
+pydantic-settings==2.11.0
+httpx==0.28.1
+PyYAML==6.0.3
+impyla==0.24.0
+pytest==8.4.2
+
+# cel-python uses google-re2 when that package is installed, and Python's re
+# module when it is not. google-re2 does not ship a wheel for this Mac, and
+# the source build needs a working C++ toolchain. Install CEL without it:
+#   pip install --no-deps cel-python==0.4.0 pendulum==3.2.0 lark==1.3.1 jmespath==1.1.0
+cel-python==0.4.0
+pendulum==3.2.0
+lark==1.3.1
+jmespath==1.1.0
