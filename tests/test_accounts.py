@@ -1,6 +1,8 @@
 from decimal import Decimal
 
 from app.accounts import build_detail_sql, build_list_sql, summarize
+from app.config import Settings
+from app.db import impala_connect_kwargs
 from cml_app import listen_address
 
 
@@ -9,6 +11,42 @@ def test_cml_listens_on_loopback_and_cdsw_port(monkeypatch):
     assert listen_address() == ("127.0.0.1", 8000)
     monkeypatch.setenv("CDSW_APP_PORT", "8100")
     assert listen_address() == ("127.0.0.1", 8100)
+
+
+def test_impala_uses_kerberos_unless_ldap_password_is_set():
+    kerberos = impala_connect_kwargs(
+        Settings(_env_file=None, impala_host="coordinator.example", impala_password="")
+    )
+    assert kerberos["auth_mechanism"] == "GSSAPI"
+    assert kerberos["host"] == "coordinator.example"
+    assert "password" not in kerberos
+
+    ldap = impala_connect_kwargs(
+        Settings(
+            _env_file=None,
+            impala_host="coordinator.example",
+            impala_user="svc",
+            impala_password="secret",
+        )
+    )
+    assert ldap["auth_mechanism"] == "LDAP"
+    assert ldap["user"] == "svc"
+    assert ldap["password"] == "secret"
+
+    warehouse = impala_connect_kwargs(
+        Settings(
+            _env_file=None,
+            impala_host="coordinator.example",
+            impala_port=443,
+            impala_use_http_transport=True,
+            impala_krb_host="dwx-env.cdp.local",
+            impala_kerberos_service="hive",
+        )
+    )
+    assert warehouse["use_http_transport"] is True
+    assert warehouse["http_path"] == "cliservice"
+    assert warehouse["krb_host"] == "dwx-env.cdp.local"
+    assert warehouse["kerberos_service_name"] == "hive"
 
 
 def test_list_sql_binds_only_provided_filters():

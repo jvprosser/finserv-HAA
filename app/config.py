@@ -17,8 +17,15 @@ class Settings(BaseSettings):
     impala_password: str = ""
     impala_use_ssl: bool = True
     impala_ca_cert: str = ""
+    # Empty selects LDAP when a password is set, and GSSAPI otherwise.
+    # Cloudera AI applications use the workload Kerberos ticket (GSSAPI).
+    impala_auth: str = ""
+    impala_kerberos_service: str = "impala"
+    impala_krb_host: str = ""
+    impala_use_http_transport: bool = False
+    impala_http_path: str = "cliservice"
 
-    client_id_column: str = ""
+    client_id_column: str = "client_id"
     api_key: str = ""
     demo_mode: bool = False
 
