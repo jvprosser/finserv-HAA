@@ -40,9 +40,10 @@ def _event(body, name):
 
 def test_feature_sql_uses_a_bound_client_predicate():
     sql = feature_sql("client_id")
-    assert "client_id = %(client_id)s" in sql
-    assert "%contribution%" in sql
-    assert "CHECKING" in sql
+    rendered = sql % {"client_id": "C123"}
+    assert "client_id = 'C123'" in rendered or "client_id = C123" in rendered
+    assert "LIKE '%contribution%'" in rendered
+    assert "CHECKING" in rendered
 
 
 def test_contribution_threshold_and_missing_history(tmp_path):

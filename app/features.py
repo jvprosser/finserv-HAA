@@ -34,11 +34,11 @@ COLUMN_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CONTRIBUTION = """
 (
   base_type = 'CREDIT' AND (
-    LOWER(category) LIKE '%contribution%'
-    OR LOWER(description) LIKE '%contribution%'
-    OR LOWER(description) LIKE '%401k%'
-    OR LOWER(description) LIKE '%403b%'
-    OR LOWER(description) LIKE '%deferral%'
+    LOWER(category) LIKE '%%contribution%%'
+    OR LOWER(description) LIKE '%%contribution%%'
+    OR LOWER(description) LIKE '%%401k%%'
+    OR LOWER(description) LIKE '%%403b%%'
+    OR LOWER(description) LIKE '%%deferral%%'
   )
 )
 """
@@ -48,12 +48,12 @@ COMPETITOR = """
   base_type = 'DEBIT'
   AND posted_date >= date_sub(to_date(now()), 90)
   AND (
-    LOWER(description) LIKE '%hysa%'
-    OR LOWER(description) LIKE '%high yield%'
-    OR LOWER(description) LIKE '%high-yield%'
+    LOWER(description) LIKE '%%hysa%%'
+    OR LOWER(description) LIKE '%%high yield%%'
+    OR LOWER(description) LIKE '%%high-yield%%'
     OR (
-      LOWER(category) LIKE '%transfer%'
-      AND LOWER(COALESCE(merchant_name, '')) NOT LIKE '%tiaa%'
+      LOWER(category) LIKE '%%transfer%%'
+      AND LOWER(COALESCE(merchant_name, '')) NOT LIKE '%%tiaa%%'
     )
   )
 )
@@ -62,10 +62,10 @@ COMPETITOR = """
 RETIREMENT_INCOME = """
 (
   base_type = 'CREDIT' AND (
-    LOWER(description) LIKE '%social security%'
-    OR LOWER(description) LIKE '%pension%'
-    OR LOWER(description) LIKE '%annuity%'
-    OR LOWER(COALESCE(merchant_name, '')) LIKE '%social security%'
+    LOWER(description) LIKE '%%social security%%'
+    OR LOWER(description) LIKE '%%pension%%'
+    OR LOWER(description) LIKE '%%annuity%%'
+    OR LOWER(COALESCE(merchant_name, '')) LIKE '%%social security%%'
   )
 )
 """
@@ -73,9 +73,9 @@ RETIREMENT_INCOME = """
 PAYROLL = """
 (
   base_type = 'CREDIT' AND (
-    LOWER(description) LIKE '%payroll%'
-    OR LOWER(description) LIKE '%direct dep%'
-    OR LOWER(category) LIKE '%payroll%'
+    LOWER(description) LIKE '%%payroll%%'
+    OR LOWER(description) LIKE '%%direct dep%%'
+    OR LOWER(category) LIKE '%%payroll%%'
   )
 )
 """
@@ -83,10 +83,10 @@ PAYROLL = """
 CD_INFLOW = """
 (
   base_type = 'CREDIT' AND (
-    LOWER(description) LIKE '%certificate of deposit%'
-    OR LOWER(description) LIKE '%cd maturity%'
-    OR LOWER(description) LIKE '%cd matured%'
-    OR LOWER(category) LIKE '%cd%'
+    LOWER(description) LIKE '%%certificate of deposit%%'
+    OR LOWER(description) LIKE '%%cd maturity%%'
+    OR LOWER(description) LIKE '%%cd matured%%'
+    OR LOWER(category) LIKE '%%cd%%'
   )
 )
 """
@@ -96,8 +96,8 @@ EDUCATION = """
   base_type = 'DEBIT'
   AND posted_date >= date_sub(to_date(now()), 90)
   AND (
-    LOWER(description) LIKE '%529%'
-    OR LOWER(description) LIKE '%tuition%'
+    LOWER(description) LIKE '%%529%%'
+    OR LOWER(description) LIKE '%%tuition%%'
   )
 )
 """
@@ -107,9 +107,9 @@ MARGIN_INTEREST = """
   base_type = 'DEBIT'
   AND posted_date >= date_sub(to_date(now()), 90)
   AND (
-    LOWER(description) LIKE '%margin interest%'
-    OR LOWER(description) LIKE '%line of credit%'
-    OR LOWER(description) LIKE '%loc interest%'
+    LOWER(description) LIKE '%%margin interest%%'
+    OR LOWER(description) LIKE '%%line of credit%%'
+    OR LOWER(description) LIKE '%%loc interest%%'
   )
 )
 """
@@ -117,8 +117,8 @@ MARGIN_INTEREST = """
 MORTGAGE = """
 (
   base_type = 'DEBIT' AND (
-    LOWER(description) LIKE '%mortgage%'
-    OR LOWER(description) LIKE '%escrow%'
+    LOWER(description) LIKE '%%mortgage%%'
+    OR LOWER(description) LIKE '%%escrow%%'
   )
 )
 """
@@ -126,9 +126,9 @@ MORTGAGE = """
 REAL_ESTATE_WIRE = """
 (
   (
-    LOWER(description) LIKE '%mortgage%'
-    OR LOWER(description) LIKE '%escrow%'
-    OR LOWER(description) LIKE '%title company%'
+    LOWER(description) LIKE '%%mortgage%%'
+    OR LOWER(description) LIKE '%%escrow%%'
+    OR LOWER(description) LIKE '%%title company%%'
   )
 )
 """
