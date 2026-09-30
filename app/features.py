@@ -202,15 +202,15 @@ CROSS JOIN (
         SELECT
           account_id,
           FIRST_VALUE(balance_amount) OVER (
-            PARTITION BY account_id ORDER BY as_of_date
+            PARTITION BY account_id ORDER BY CAST(dt AS DATE)
           ) AS start_balance,
           FIRST_VALUE(balance_amount) OVER (
-            PARTITION BY account_id ORDER BY as_of_date DESC
+            PARTITION BY account_id ORDER BY CAST(dt AS DATE) DESC
           ) AS end_balance,
           account_type
         FROM {DAILY}
         WHERE {client_predicate}
-          AND as_of_date >= date_sub(to_date(now()), 30)
+          AND CAST(dt AS DATE) >= date_sub(to_date(now()), 30)
           AND account_type IN ('CHECKING', 'IRA', 'BROKERAGE')
       ) drops
     ) AS max_balance_drop_30d,
@@ -218,21 +218,21 @@ CROSS JOIN (
       WHEN container = 'bank'
        AND account_type IN ('CHECKING', 'SAVINGS')
        AND balance_amount > 100000
-       AND as_of_date >= date_sub(to_date(now()), 120)
-      THEN as_of_date
+       AND CAST(dt AS DATE) >= date_sub(to_date(now()), 120)
+      THEN CAST(dt AS DATE)
     END) AS idle_cash_days_above_100k,
     SUM(CASE
-      WHEN as_of_date = latest_day AND UPPER(COALESCE(account_status, '')) != 'ACTIVE' THEN 1
+      WHEN CAST(dt AS DATE) = latest_day AND UPPER(COALESCE(account_status, '')) != 'ACTIVE' THEN 1
       ELSE 0
     END) AS disconnected_account_count
   FROM (
     SELECT
-      as_of_date,
+      CAST(dt AS DATE) AS dt,
       balance_amount,
       container,
       account_type,
       account_status,
-      MAX(as_of_date) OVER () AS latest_day
+      MAX(CAST(dt AS DATE)) OVER () AS latest_day
     FROM {DAILY}
     WHERE {client_predicate}
   ) history

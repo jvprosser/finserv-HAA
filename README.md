@@ -75,7 +75,7 @@ Each event object includes `action` from the YAML (`create_task`, `create_opport
 
 These tables are the daily history the rules read. This repo has the DDL only. NiFi loads them.
 
-- `yodlee_account_daily.ddl` — `yodlee_held_away_accounts_daily`, one row per account per `as_of_date`
+- `yodlee_account_daily.ddl` — `yodlee_held_away_accounts_daily`, one row per account per `dt`
 - `yodlee_transactions.ddl` — Yodlee transactions
 - `yodlee_holdings.ddl` — one row per holding per `as_of_date`
 
