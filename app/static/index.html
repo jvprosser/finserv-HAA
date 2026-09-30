@@ -62,7 +62,7 @@
       padding: 8px 10px;
     }
     textarea { min-height: 72px; resize: vertical; }
-    .row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px; }
     .card {
       background: var(--card);
       border: 1px solid var(--line);
@@ -100,12 +100,8 @@
   <main>
     <div class="row">
       <div>
-        <label for="api-key">API key</label>
-        <input id="api-key" type="password" autocomplete="off">
-      </div>
-      <div>
         <label for="client-id">Client id</label>
-        <input id="client-id" value="C123">
+        <input id="client-id" value="P-7015">
       </div>
       <button id="load" type="button">Load client</button>
     </div>
@@ -133,7 +129,7 @@
   </main>
   <script>
     const ACTION_ORDER = { create_opportunity: 0, create_task: 1, update_account: 2 };
-    const keyInput = document.querySelector("#api-key");
+    const API_KEY = "test";
     const clientInput = document.querySelector("#client-id");
     const banner = document.querySelector("#banner");
     const summary = document.querySelector("#summary");
@@ -144,9 +140,6 @@
     const rulesMsg = document.querySelector("#rules-msg");
     let ruleEvents = [];
     let rawDirty = false;
-
-    keyInput.value = sessionStorage.getItem("haa-api-key") || "";
-    keyInput.addEventListener("change", () => sessionStorage.setItem("haa-api-key", keyInput.value));
 
     document.querySelector("#tab-client").onclick = () => show("client");
     document.querySelector("#tab-rules").onclick = () => { show("rules"); loadRules(); };
@@ -162,7 +155,7 @@
     }
 
     function headers() {
-      return { Authorization: "Bearer " + keyInput.value, "Content-Type": "application/json" };
+      return { Authorization: "Bearer " + API_KEY, "Content-Type": "application/json" };
     }
 
     async function api(path, options) {
