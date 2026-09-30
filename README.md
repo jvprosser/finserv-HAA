@@ -85,7 +85,7 @@ Description and category matches in `app/features.py` are demo heuristics. Repla
 
 ## Salesforce
 
-Set `SFDC_LOGIN_URL`, `SFDC_CLIENT_ID`, and `SFDC_CLIENT_SECRET` for the client-credentials flow. `SFDC_OPPORTUNITY_STAGE` must exist in the org. `SFDC_ACCOUNT_EXTERNAL_ID_FIELD` is the Account field that stores the client id. The account-update button stays off until that field is set.
+Set `SFDC_LOGIN_URL` to the org My Domain, for example `https://your-domain.my.salesforce.com`, not the Lightning login page and not a URL that already includes `/services/oauth2/token` twice. `SFDC_CLIENT_ID` and `SFDC_CLIENT_SECRET` are the Connected App consumer key and secret. Enable the client credentials flow on that Connected App. `SFDC_OPPORTUNITY_STAGE` must exist in the org. `SFDC_ACCOUNT_EXTERNAL_ID_FIELD` is the Account field that stores the client id. The account-update button stays off until that field is set.
 
 Without those credentials, demo mode keeps created records in memory so the page can show an opportunity.
 

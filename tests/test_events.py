@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.features import feature_sql, txn_filter_column
 from app.main import create_app
-from app.sfdc import MemorySalesforce
+from app.sfdc import MemorySalesforce, oauth_form, oauth_token_url
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = (ROOT / "rules" / "actionable_events.yaml").read_text()
@@ -136,3 +136,20 @@ def test_rules_put_changes_action_and_rejects_bad_cel(tmp_path):
     assert saved.status_code == 200
     events = client.get("/v1/clients/C1/events", headers=_auth()).json()
     assert _event(events, "IDLE_CASH_DRAG_IDENTIFIED")["action"] == "create_opportunity"
+
+
+def test_salesforce_token_url_and_form_are_plain_client_credentials():
+    from urllib.parse import parse_qs, urlencode
+
+    assert oauth_token_url("https://example.my.salesforce.com/") == (
+        "https://example.my.salesforce.com/services/oauth2/token"
+    )
+    assert oauth_token_url("https://example.my.salesforce.com/services/oauth2/token") == (
+        "https://example.my.salesforce.com/services/oauth2/token"
+    )
+    form = oauth_form('  "abc"  ', " secret\n")
+    assert form["grant_type"] == "client_credentials"
+    assert form["client_id"] == "abc"
+    assert form["client_secret"] == "secret"
+    assert parse_qs(urlencode(form))["grant_type"] == ["client_credentials"]
+

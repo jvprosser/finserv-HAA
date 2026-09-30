@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import date, timedelta
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -41,6 +41,26 @@ def description_body(rule_fields: dict[str, str], evidence: dict[str, Any]) -> s
 
 def soql_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _trimmed(value: str) -> str:
+    return (value or "").strip().strip('"').strip("'")
+
+
+def oauth_token_url(login_url: str) -> str:
+    base = _trimmed(login_url).rstrip("/")
+    suffix = "/services/oauth2/token"
+    if base.endswith(suffix):
+        return base
+    return f"{base}{suffix}"
+
+
+def oauth_form(client_id: str, client_secret: str) -> dict[str, str]:
+    return {
+        "grant_type": "client_credentials",
+        "client_id": _trimmed(client_id),
+        "client_secret": _trimmed(client_secret),
+    }
 
 
 class SalesforceError(Exception):
@@ -118,13 +138,11 @@ class SalesforceRest:
         if self._token and time.time() < self._expires_at:
             return self._token
         response = httpx.post(
-            f"{self.settings.sfdc_login_url.rstrip('/')}/services/oauth2/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self.settings.sfdc_client_id,
-                "client_secret": self.settings.sfdc_client_secret,
-            },
+            oauth_token_url(self.settings.sfdc_login_url),
+            content=urlencode(oauth_form(self.settings.sfdc_client_id, self.settings.sfdc_client_secret)),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=30,
+            follow_redirects=False,
         )
         if response.status_code >= 400:
             raise SalesforceError(f"Salesforce login failed: {response.text}", 502)
