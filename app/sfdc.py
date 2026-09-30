@@ -46,6 +46,7 @@ def description_body(
     evidence: dict[str, Any],
     accounts: list[dict[str, Any]] | None = None,
     transactions: list[dict[str, Any]] | None = None,
+    brief: str = "",
 ) -> str:
     lines = [
         rule_fields["description"],
@@ -68,6 +69,8 @@ def description_body(
     if transactions:
         tables.append(_text_table("Transactions", TXN_DETAIL_FIELDS, transactions))
     body = "\n".join(lines)
+    if brief:
+        body = body + "\n\nAdvisor note\n" + brief.strip()
     if tables:
         body = body + "\n\n" + "\n\n".join(table for table in tables if table)
     return body[:32000]
@@ -323,3 +326,7 @@ def record_key(action: str, event_name: str, client_id: str) -> str:
 
 def lightning_path(client_id: str, event_name: str) -> str:
     return f"/v1/clients/{quote(client_id, safe='')}/events/{quote(event_name, safe='')}/sfdc"
+
+
+def brief_path(client_id: str, event_name: str) -> str:
+    return f"/v1/clients/{quote(client_id, safe='')}/events/{quote(event_name, safe='')}/brief"

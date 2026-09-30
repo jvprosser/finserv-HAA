@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.auth import get_settings, require_api_key
@@ -160,6 +160,36 @@ def parse_rules(text: str) -> list[Rule]:
     return rules
 
 
+def validate_cel_features(event_name: str, cel: str, features: list[str]) -> None:
+    known = set(FEATURE_NAMES)
+    errors: list[dict] = []
+    if not isinstance(features, list) or not features:
+        errors.append(_error(event_name, "features", "features must list the measurements the CEL reads"))
+        features = []
+    names = [str(feature) for feature in features]
+    unknown = [feature for feature in names if feature not in known]
+    if unknown:
+        errors.append(_error(event_name, "features", f"Unknown features: {', '.join(unknown)}"))
+    if not isinstance(cel, str) or not cel.strip():
+        errors.append(_error(event_name, "cel", "cel is required"))
+    else:
+        try:
+            identifiers = cel_identifiers(cel.strip())
+        except Exception as exc:
+            errors.append(_error(event_name, "cel", f"CEL did not compile: {exc}"))
+        else:
+            undeclared = sorted(identifiers - set(names))
+            if undeclared:
+                errors.append(
+                    _error(event_name, "cel", f"CEL references features not listed on the rule: {', '.join(undeclared)}")
+                )
+            outside = sorted(identifiers - known)
+            if outside:
+                errors.append(_error(event_name, "cel", f"CEL references unknown features: {', '.join(outside)}"))
+    if errors:
+        raise RuleValidationError(errors)
+
+
 def load_rules(path: Path) -> list[Rule]:
     return parse_rules(path.read_text())
 
@@ -169,6 +199,11 @@ router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key)])
 
 class RulesBody(BaseModel):
     yaml: str
+
+
+class RuleDraftBody(BaseModel):
+    prompt: str
+    event_name: str
 
 
 @router.get("/rules")
@@ -188,6 +223,30 @@ def write_rules(body: RulesBody, settings: Settings = Depends(get_settings)) -> 
     except RuleValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors) from exc
     return {"yaml": body.yaml, "events": [rule.public() for rule in rules]}
+
+
+@router.post("/rules/draft")
+def draft_rule(body: RuleDraftBody, request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    from app.llm import LLMError, rule_draft, run_complete
+
+    if body.event_name not in EVENT_NAMES:
+        raise HTTPException(status_code=404, detail="Unknown event")
+    if not (body.prompt or "").strip():
+        raise HTTPException(status_code=422, detail="prompt is required")
+    current = next(rule for rule in load_rules(settings.rules_path) if rule.event_name == body.event_name)
+    try:
+        proposed = rule_draft(
+            body.event_name,
+            body.prompt.strip(),
+            current.cel,
+            lambda messages: run_complete(request, messages),
+        )
+        validate_cel_features(body.event_name, proposed["cel"], proposed["features"])
+    except LLMError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except RuleValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    return {"event_name": body.event_name, "cel": proposed["cel"], "features": proposed["features"]}
 
 
 def save_rules(path: Path, text: str) -> list[Rule]:

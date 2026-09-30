@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOG = (ROOT / "rules" / "actionable_events.yaml").read_text()
 
 
-def _client(tmp_path, features, sfdc=None, account_field="", supporting=None):
+def _client(tmp_path, features, sfdc=None, account_field="", supporting=None, llm=None):
     rules_path = tmp_path / "actionable_events.yaml"
     rules_path.write_text(CATALOG)
     settings = Settings(
@@ -28,6 +28,8 @@ def _client(tmp_path, features, sfdc=None, account_field="", supporting=None):
     app.state.feature_loader = lambda client_id: features
     app.state.sfdc_client = sfdc if sfdc is not None else MemorySalesforce()
     app.state.supporting_loader = lambda client_id: supporting or {"accounts": [], "transactions": []}
+    if llm is not None:
+        app.state.llm_complete = llm
     return TestClient(app), rules_path
 
 
@@ -144,8 +146,10 @@ def test_matched_event_adds_account_and_transaction_tables(tmp_path):
         ],
     }
     client, _ = _client(tmp_path, {"days_since_last_contribution": 120}, supporting=supporting)
+    body = client.get("/v1/clients/C1/events", headers=_auth()).json()
+    assert body["account_name"] == "TESTDATA"
     matched = _event(
-        client.get("/v1/clients/C1/events", headers=_auth()).json(),
+        body,
         "CONTRIBUTIONS_STOPPED_OVER_90_DAYS",
     )
     assert matched["accounts"][0]["account_name"] == "TESTDATA"
@@ -162,6 +166,98 @@ def test_matched_event_adds_account_and_transaction_tables(tmp_path):
     assert "TESTDATA" in description
     assert "401k contribution" in description
     assert "high yield" not in description
+
+
+def test_advisor_brief_and_salesforce_description_use_the_draft(tmp_path):
+    supporting = {
+        "accounts": [
+            {
+                "account_name": "TESTDATA",
+                "displayed_name": "accountHolder",
+                "account_type": "CHECKING",
+                "balance": 150000,
+                "amount": 0,
+            }
+        ],
+        "transactions": [
+            {
+                "posted_date": "2026-05-12",
+                "amount": 500,
+                "base_type": "CREDIT",
+                "category": "contribution",
+                "description": "401k contribution",
+                "days_since_last_contribution": 1,
+            }
+        ],
+    }
+    captured = []
+
+    def llm(messages):
+        captured.append(messages)
+        return "TESTDATA has had no contribution for 120 days."
+
+    client, _ = _client(
+        tmp_path,
+        {"days_since_last_contribution": 120},
+        supporting=supporting,
+        llm=llm,
+    )
+    events = client.get("/v1/clients/C1/events", headers=_auth()).json()
+    assert events["llm_enabled"] is True
+    unmatched = client.post("/v1/clients/C1/events/IDLE_CASH_DRAG_IDENTIFIED/brief", headers=_auth())
+    assert unmatched.status_code == 409
+
+    drafted = client.post("/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/brief", headers=_auth())
+    assert drafted.status_code == 200
+    assert "TESTDATA" in drafted.json()["brief"]
+    assert "TESTDATA" in captured[0][1]["content"]
+
+    created = client.post(
+        "/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/sfdc",
+        headers=_auth(),
+        json={"brief": drafted.json()["brief"]},
+    )
+    assert created.status_code == 200
+    description = client.get("/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/sfdc", headers=_auth()).json()[
+        "description"
+    ]
+    assert "Advisor note" in description
+    assert "no contribution for 120 days" in description
+    assert description.index("Advisor note") < description.index("CEL fields")
+
+
+def test_advisor_brief_requires_model_config(tmp_path):
+    client, _ = _client(tmp_path, {"days_since_last_contribution": 120})
+    response = client.post("/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/brief", headers=_auth())
+    assert response.status_code == 503
+
+
+def test_rules_draft_validates_cel_and_does_not_write(tmp_path):
+    client, rules_path = _client(
+        tmp_path,
+        {},
+        llm=lambda messages: '{"cel": "idle_cash_days_above_100k >= 90", "features": ["idle_cash_days_above_100k"]}',
+    )
+    original = rules_path.read_text()
+    drafted = client.post(
+        "/v1/rules/draft",
+        headers=_auth(),
+        json={"event_name": "IDLE_CASH_DRAG_IDENTIFIED", "prompt": "idle cash over 100000 for 90 days"},
+    )
+    assert drafted.status_code == 200
+    assert drafted.json()["cel"] == "idle_cash_days_above_100k >= 90"
+    assert rules_path.read_text() == original
+
+    client.app.state.llm_complete = (
+        lambda messages: '{"cel": "not_a_feature > 1", "features": ["days_since_last_contribution"]}'
+    )
+    rejected = client.post(
+        "/v1/rules/draft",
+        headers=_auth(),
+        json={"event_name": "IDLE_CASH_DRAG_IDENTIFIED", "prompt": "break it"},
+    )
+    assert rejected.status_code == 422
+    assert rules_path.read_text() == original
 
 
 def test_pick_supporting_keeps_daily_rows_for_balance_rules():

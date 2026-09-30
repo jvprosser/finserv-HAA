@@ -37,4 +37,10 @@ class Settings(BaseSettings):
     sfdc_account_external_id_field: str = ""
     sfdc_api_version: str = "59.0"
 
+    llm_base_url: str = ""
+    llm_model_id: str = "nvidia/nemotron-3-super-120b-a12b"
+    llm_api_key: str = ""
+    llm_timeout: float = 60.0
+    llm_max_tokens: int = 512
+
     rules_path: Path = ROOT / "rules" / "actionable_events.yaml"

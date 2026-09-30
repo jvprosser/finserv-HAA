@@ -62,10 +62,12 @@ curl -s -H "Authorization: Bearer demo-key" \
 - `GET /v1/accounts` lists accounts. Filters: `container`, `account_type`, `account_status`, `provider_name`, `provider_id`, `last_updated_day`. `limit` defaults to 50 and cannot exceed 200.
 - `GET /v1/accounts/{account_id}` returns the full row.
 - `GET /v1/accounts/summary` returns net worth by currency. Included assets add, included liabilities subtract, and currencies are not combined.
-- `GET /v1/clients/{client_id}/events` evaluates the YAML rules. `matched_only=true` drops the rest.
-- `POST /v1/clients/{client_id}/events/{event_name}/sfdc` creates or updates the Salesforce Task, Opportunity, or Account. A second call updates the same record. An unmatched event returns 409.
-- `GET` on that same path returns the Salesforce record for the page, or 404 before the button has been used.
+- `GET /v1/clients/{client_id}/events` evaluates the YAML rules. `matched_only=true` drops the rest. The payload includes `account_name` and `llm_enabled`.
+- `POST /v1/clients/{client_id}/events/{event_name}/brief` drafts an advisor note from the matched CEL evidence and supporting rows. Unmatched events return 409. Missing model config returns 503.
+- `POST /v1/clients/{client_id}/events/{event_name}/sfdc` creates or updates the Salesforce Task, Opportunity, or Account. Optional JSON `{"brief": "..."}` is stored in Description above the evidence tables. A second call updates the same record. An unmatched event returns 409.
+- `GET` on that same Salesforce path returns the record for the page, or 404 before the button has been used.
 - `GET /v1/rules` and `PUT /v1/rules` read and replace `rules/actionable_events.yaml`. A CEL expression that does not compile returns 422 and leaves the file unchanged.
+- `POST /v1/rules/draft` asks the model for `cel` and `features` for one event. The proposal is rejected unless CEL compiles against the known feature list. It does not write the YAML file.
 
 Each event object includes `action` from the YAML (`create_task`, `create_opportunity`, or `update_account`), the description, the business opportunity, the next steps, and the CEL expression.
 
@@ -99,6 +101,10 @@ Enabling **Client Credentials Flow** on the Connected App Edit page is not enoug
 `SFDC_OPPORTUNITY_STAGE` must exist in the org. `SFDC_ACCOUNT_EXTERNAL_ID_FIELD` is the Account field that stores the client id. The account-update button stays off until that field is set.
 
 Without those credentials, demo mode keeps created records in memory so the page can show an opportunity.
+
+## LLM
+
+Set `LLM_BASE_URL` to the Cloudera model-serving OpenAI `/v1` URL and `LLM_MODEL_ID` to the served model, for example `nvidia/nemotron-3-super-120b-a12b`. Set `LLM_API_KEY` on the Application to the serving token. In a Workbench session you can leave `LLM_API_KEY` empty and the app will use `CDP_TOKEN` or `/tmp/jwt` `access_token`. CEL still decides whether an event matched. The model only drafts the advisor note and a CEL proposal.
 
 ## Tests
 

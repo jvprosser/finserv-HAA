@@ -4,18 +4,21 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from app.auth import require_api_key
 from app.config import Settings
 from app.db import DataUnavailable
 from app.features import MONEY_FEATURES, pick_supporting
+from app.llm import llm_configured
 from app.rules import Rule, RuleValidationError, load_rules
 from app.sfdc import (
     LABELS,
     SOBJECTS,
     SalesforceError,
     account_fields,
+    brief_path,
     description_body,
     lightning_path,
     opportunity_fields,
@@ -24,6 +27,10 @@ from app.sfdc import (
 )
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key)])
+
+
+class SfdcBody(BaseModel):
+    brief: str = ""
 
 
 def _features(request: Request, client_id: str) -> dict[str, Any]:
@@ -79,6 +86,7 @@ def _button(rule: Rule, client_id: str, status: str, settings: Settings) -> dict
         "method": "POST",
         "path": path,
         "view_path": path,
+        "brief_path": brief_path(client_id, rule.event_name),
         "disabled_reason": reason,
     }
 
@@ -167,12 +175,33 @@ def _supporting(request: Request, client_id: str) -> dict[str, Any]:
         return {"accounts": [], "transactions": []}
 
 
-def _fields(rule: Rule, key: str, evaluated: dict[str, Any], settings: Settings) -> dict[str, Any]:
+def _account_name(supporting: dict[str, Any], client_id: str) -> str:
+    names = []
+    seen: set[str] = set()
+    for row in supporting.get("accounts") or []:
+        name = str(row.get("account_name") or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return ", ".join(names) if names else client_id
+
+
+def _complete(request: Request, messages: list[dict[str, str]]) -> str:
+    from app.llm import LLMError, run_complete
+
+    try:
+        return run_complete(request, messages)
+    except LLMError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+def _fields(rule: Rule, key: str, evaluated: dict[str, Any], settings: Settings, brief: str = "") -> dict[str, Any]:
     body = description_body(
         rule.public(),
         evaluated.get("evidence") or {},
         evaluated.get("accounts") or [],
         evaluated.get("transactions") or [],
+        brief,
     )
     if rule.action == "create_opportunity":
         return opportunity_fields(key, body, settings.sfdc_opportunity_stage)
@@ -198,13 +227,37 @@ def client_events(
         events = [event for event in events if event["matched"]]
     return {
         "client_id": client_id,
+        "account_name": _account_name(supporting, client_id),
+        "llm_enabled": bool(getattr(request.app.state, "llm_complete", None)) or llm_configured(settings),
         "evaluated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "events": events,
     }
 
 
+@router.post("/clients/{client_id}/events/{event_name}/brief")
+def create_advisor_brief(client_id: str, event_name: str, request: Request) -> dict[str, str]:
+    from app.llm import advisor_brief
+
+    settings = request.app.state.settings
+    rule = next((item for item in _rules(settings) if item.event_name == event_name), None)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Unknown event")
+    evaluated = evaluate_rule(
+        rule, _features(request, client_id), client_id, settings, _supporting(request, client_id)
+    )
+    if not evaluated["matched"]:
+        raise HTTPException(status_code=409, detail="Event is not matched")
+    brief = advisor_brief(evaluated, lambda messages: _complete(request, messages))
+    return {"brief": brief, "event_name": event_name, "client_id": client_id}
+
+
 @router.post("/clients/{client_id}/events/{event_name}/sfdc")
-def create_sfdc_record(client_id: str, event_name: str, request: Request) -> dict[str, str]:
+def create_sfdc_record(
+    client_id: str,
+    event_name: str,
+    request: Request,
+    body: SfdcBody | None = Body(default=None),
+) -> dict[str, str]:
     settings = request.app.state.settings
     rule = next((item for item in _rules(settings) if item.event_name == event_name), None)
     if rule is None:
@@ -217,7 +270,8 @@ def create_sfdc_record(client_id: str, event_name: str, request: Request) -> dic
     if not evaluated["matched"]:
         raise HTTPException(status_code=409, detail="Event is not matched")
     key = record_key(rule.action, event_name, client_id)
-    fields = _fields(rule, key, evaluated, settings)
+    brief = (body.brief if body else "").strip()
+    fields = _fields(rule, key, evaluated, settings, brief)
     try:
         result, record_id = _sfdc(request).upsert(SOBJECTS[rule.action], key, fields, client_id)
     except SalesforceError as exc:

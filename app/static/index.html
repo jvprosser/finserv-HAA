@@ -107,7 +107,7 @@
 <body>
   <header>
     <h1>Held-away assets</h1>
-    <p class="sub">Next best actions for one client.</p>
+    <p class="sub" id="subtitle">Next best actions for P-7015</p>
     <nav>
       <button id="tab-client" type="button">Client</button>
       <button id="tab-rules" class="secondary" type="button" aria-pressed="false">Rules</button>
@@ -135,6 +135,17 @@
 
     <section id="rules-view" class="hidden">
       <p class="sub">Edits are saved to the YAML catalog. Event names stay fixed. A bad CEL expression is rejected and the file is left unchanged.</p>
+      <div class="row">
+        <div>
+          <label for="draft-event">Event</label>
+          <select id="draft-event"></select>
+        </div>
+      </div>
+      <label for="draft-prompt">Draft CEL in English</label>
+      <textarea id="draft-prompt" spellcheck="false" placeholder="Flag idle cash above 100000 for 90 days"></textarea>
+      <p class="actions" style="margin-top:12px">
+        <button id="draft-cel" class="secondary" type="button">Draft CEL</button>
+      </p>
       <div id="rule-forms"></div>
       <label for="yaml">YAML</label>
       <textarea id="yaml" spellcheck="false"></textarea>
@@ -149,12 +160,15 @@
     const API_KEY = "test";
     const clientInput = document.querySelector("#client-id");
     const banner = document.querySelector("#banner");
+    const subtitle = document.querySelector("#subtitle");
     const summary = document.querySelector("#summary");
     const cards = document.querySelector("#cards");
     const waiting = document.querySelector("#waiting");
     const yamlBox = document.querySelector("#yaml");
     const ruleForms = document.querySelector("#rule-forms");
     const rulesMsg = document.querySelector("#rules-msg");
+    const draftEvent = document.querySelector("#draft-event");
+    const draftPrompt = document.querySelector("#draft-prompt");
     let ruleEvents = [];
     let rawDirty = false;
 
@@ -162,6 +176,7 @@
     document.querySelector("#tab-rules").onclick = () => { show("rules"); loadRules(); };
     document.querySelector("#load").onclick = loadClient;
     document.querySelector("#save-rules").onclick = saveRules;
+    document.querySelector("#draft-cel").onclick = draftCel;
     yamlBox.addEventListener("input", () => { rawDirty = true; });
 
     function show(which) {
@@ -212,7 +227,8 @@
           api("/v1/clients/" + encodeURIComponent(clientId) + "/events")
         ]);
         renderSummary(worth);
-        renderEvents(events.events || []);
+        renderEvents(events.events || [], events.llm_enabled);
+        subtitle.textContent = "Next best actions for " + (events.account_name || clientId);
       } catch (error) {
         banner.textContent = detailText(error);
       }
@@ -226,27 +242,28 @@
       summary.innerHTML = rows.join("") || "<p class='sub'>No balances.</p>";
     }
 
-    function renderEvents(events) {
+    function renderEvents(events, llmEnabled) {
       const matched = events.filter((event) => event.status === "matched")
         .sort((a, b) => ACTION_ORDER[a.action] - ACTION_ORDER[b.action]);
       const held = events.filter((event) => event.status === "insufficient_data");
-      cards.innerHTML = matched.map(cardHtml).join("") || "<p class='sub'>No matched actions.</p>";
+      cards.innerHTML = matched.map((event) => cardHtml(event, llmEnabled)).join("") || "<p class='sub'>No matched actions.</p>";
       waiting.innerHTML = held.map((event) =>
         "<p><strong>" + event.event_name + "</strong> · missing " + (event.missing || []).join(", ") + "</p>"
       ).join("") || "<p class='sub'>Every rule had the history it needs.</p>";
       matched.forEach((event) => {
         const node = cards.querySelector("[data-event='" + event.event_name + "']");
-        const button = node.querySelector("button");
-        button.onclick = () => runAction(event, node);
+        node.querySelector("[data-role='sfdc']").onclick = () => runAction(event, node);
+        node.querySelector("[data-role='brief']").onclick = () => draftBrief(event, node);
         loadRecord(event, node);
       });
     }
 
-    function cardHtml(event) {
+    function cardHtml(event, llmEnabled) {
       const evidence = Object.entries(event.evidence || {}).map(([name, value]) =>
         "<span class='pill'>" + name + " " + value + "</span>"
       ).join("");
       const disabled = event.sfdc_action && event.sfdc_action.enabled ? "" : "disabled";
+      const briefDisabled = llmEnabled ? "" : "disabled";
       const label = event.sfdc_action ? event.sfdc_action.label : "Salesforce";
       return "<article class='card' data-event='" + event.event_name + "'>" +
         "<p class='meta'>" + event.action + "</p>" +
@@ -256,7 +273,10 @@
         "<div class='evidence'>" + evidence + "</div>" +
         detailTable("Accounts", ["account_name", "displayed_name", "account_type", "balance", "amount"], event.accounts || []) +
         detailTable("Transactions", ["posted_date", "amount", "base_type", "category", "description"], event.transactions || []) +
-        "<div class='actions'><button type='button' " + disabled + ">" + label + "</button>" +
+        "<label for='brief-" + event.event_name + "'>Advisor note</label>" +
+        "<textarea class='brief' id='brief-" + event.event_name + "' spellcheck='false'></textarea>" +
+        "<div class='actions'><button type='button' data-role='brief' " + briefDisabled + ">Draft advisor note</button>" +
+        "<button type='button' data-role='sfdc' " + disabled + ">" + label + "</button>" +
         "<span class='meta action-msg'></span></div>" +
         "<div class='record'></div></article>";
     }
@@ -279,11 +299,27 @@
       }
     }
 
-    async function runAction(event, node) {
+    async function draftBrief(event, node) {
       const message = node.querySelector(".action-msg");
+      const box = node.querySelector(".brief");
       message.textContent = "";
       try {
-        const result = await api(event.sfdc_action.path, { method: "POST" });
+        const result = await api(event.sfdc_action.brief_path, { method: "POST" });
+        box.value = result.brief || "";
+      } catch (error) {
+        message.textContent = detailText(error);
+      }
+    }
+
+    async function runAction(event, node) {
+      const message = node.querySelector(".action-msg");
+      const brief = node.querySelector(".brief").value.trim();
+      message.textContent = "";
+      try {
+        const result = await api(event.sfdc_action.path, {
+          method: "POST",
+          body: JSON.stringify({ brief: brief })
+        });
         message.textContent = result.result + " " + result.sobject + " " + result.id;
         await loadRecord(event, node);
       } catch (error) {
@@ -314,6 +350,11 @@
         ruleEvents = body.events;
         rawDirty = false;
         yamlBox.value = body.yaml;
+        const selected = draftEvent.value;
+        draftEvent.innerHTML = ruleEvents.map((event) =>
+          "<option value='" + event.event_name + "'>" + event.event_name + "</option>"
+        ).join("");
+        if (selected) draftEvent.value = selected;
         renderRuleForms();
       } catch (error) {
         rulesMsg.textContent = detailText(error);
@@ -367,6 +408,30 @@
           "  cel: " + JSON.stringify(event.cel)
         ].join("\n");
       }).join("\n\n") + "\n";
+    }
+
+    async function draftCel() {
+      rulesMsg.textContent = "";
+      try {
+        const body = await api("/v1/rules/draft", {
+          method: "POST",
+          body: JSON.stringify({
+            event_name: draftEvent.value,
+            prompt: draftPrompt.value
+          })
+        });
+        const index = ruleEvents.findIndex((event) => event.event_name === body.event_name);
+        if (index >= 0) {
+          ruleEvents[index].cel = body.cel;
+          ruleEvents[index].features = body.features;
+          rawDirty = false;
+          yamlBox.value = toYaml(ruleEvents);
+          renderRuleForms();
+        }
+        rulesMsg.textContent = "Draft loaded. Save rules to keep it.";
+      } catch (error) {
+        rulesMsg.textContent = detailText(error);
+      }
     }
 
     async function saveRules() {
