@@ -39,11 +39,17 @@ def _event(body, name):
 
 
 def test_feature_sql_uses_a_bound_client_predicate():
+    from impala.interface import _bind_parameters_dict
+
     sql = feature_sql("client_id")
-    rendered = sql % {"client_id": "C123"}
-    assert "client_id = 'C123'" in rendered or "client_id = C123" in rendered
+    rendered = _bind_parameters_dict(sql, {"client_id": "C123"})
+    assert "CAST(client_id AS STRING) = 'C123'" in rendered
     assert "LIKE '%contribution%'" in rendered
     assert "CHECKING" in rendered
+
+    numeric_column = _bind_parameters_dict(feature_sql("account_id"), {"client_id": "P-7011"})
+    assert "CAST(account_id AS STRING) = 'P-7011'" in numeric_column
+    assert "account_id = 'P-7011'" not in numeric_column
 
 
 def test_contribution_threshold_and_missing_history(tmp_path):

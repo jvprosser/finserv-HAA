@@ -9,11 +9,6 @@ CREATE TABLE IF NOT EXISTS retirement_distributions.yodlee_holdings (
     value_amount    DECIMAL(18,4)  COMMENT 'Market value',
     holding_type    STRING         COMMENT 'Holding type (stock, CD, mutual fund, ...)'
 )
-PARTITIONED BY (
-    as_of_date
-)
-STORED AS ICEBERG
-TBLPROPERTIES (
-    'format-version' = '2',
-    'write.parquet.compression-codec' = 'snappy'
-);
+PARTITIONED BY SPEC ( as_of_date )
+STORED by ICEBERG
+TBLPROPERTIES ('format-version' = '2');

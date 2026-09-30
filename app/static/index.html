@@ -41,10 +41,16 @@
       padding: 8px 14px;
       cursor: pointer;
     }
-    button.secondary, button[aria-pressed="false"] {
+    button.secondary, button[aria-pressed="false"], a.nav-link {
       background: transparent;
       color: var(--teal);
       border: 1px solid var(--teal);
+    }
+    a.nav-link {
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 6px;
+      padding: 8px 14px;
     }
     button:disabled { opacity: 0.45; cursor: default; }
     label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
@@ -88,6 +94,7 @@
     <nav>
       <button id="tab-client" type="button">Client</button>
       <button id="tab-rules" class="secondary" type="button" aria-pressed="false">Rules</button>
+      <a class="nav-link" href="/docs">Swagger</a>
     </nav>
   </header>
   <main>

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS retirement_distributions.yodlee_transactions (
+  CREATE TABLE IF NOT EXISTS retirement_distributions.yodlee_transactions (
     transaction_id   BIGINT         COMMENT 'Yodlee transaction ID',
     account_id       BIGINT         COMMENT 'Yodlee account ID',
     client_id        STRING         COMMENT 'Client or party key. Rename when the warehouse column is confirmed.',
@@ -10,11 +10,6 @@ CREATE TABLE IF NOT EXISTS retirement_distributions.yodlee_transactions (
     merchant_name    STRING         COMMENT 'Merchant or source name',
     status           STRING         COMMENT 'Transaction status'
 )
-PARTITIONED BY (
-    days(posted_date)
-)
-STORED AS ICEBERG
-TBLPROPERTIES (
-    'format-version' = '2',
-    'write.parquet.compression-codec' = 'snappy'
-);
+PARTITIONED BY SPEC (days(posted_date))
+STORED by ICEBERG
+TBLPROPERTIES ('format-version' = '2');

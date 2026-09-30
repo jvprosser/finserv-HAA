@@ -146,6 +146,9 @@ def require_column(name: str) -> str:
 
 def feature_sql(client_column: str) -> str:
     column = require_column(client_column)
+    # Client ids such as P-7011 are strings. CAST keeps Impala from rejecting
+    # the comparison when the configured column is numeric (account_id is BIGINT).
+    client_predicate = f"CAST({column} AS STRING) = %(client_id)s"
     return f"""
 SELECT
   txn.txn_rows AS txn_rows,
@@ -188,7 +191,7 @@ FROM (
       AS days_since_last_mortgage,
     SUM(CASE WHEN {MORTGAGE} THEN 1 ELSE 0 END) AS mortgage_payment_count
   FROM {TRANSACTIONS}
-  WHERE {column} = %(client_id)s
+  WHERE {client_predicate}
 ) txn
 CROSS JOIN (
   SELECT
@@ -206,7 +209,7 @@ CROSS JOIN (
           ) AS end_balance,
           account_type
         FROM {DAILY}
-        WHERE {column} = %(client_id)s
+        WHERE {client_predicate}
           AND as_of_date >= date_sub(to_date(now()), 30)
           AND account_type IN ('CHECKING', 'IRA', 'BROKERAGE')
       ) drops
@@ -231,7 +234,7 @@ CROSS JOIN (
       account_status,
       MAX(as_of_date) OVER () AS latest_day
     FROM {DAILY}
-    WHERE {column} = %(client_id)s
+    WHERE {client_predicate}
   ) history
 ) daily
 CROSS JOIN (
@@ -247,7 +250,7 @@ CROSS JOIN (
       MAX(as_of_date) OVER () AS latest_day,
       MIN(as_of_date) OVER () AS prior_day
     FROM {HOLDINGS}
-    WHERE {column} = %(client_id)s
+    WHERE {client_predicate}
       AND as_of_date >= date_sub(to_date(now()), 30)
   ) span
 ) holdings
