@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.features import feature_sql, txn_filter_column
 from app.main import create_app
-from app.sfdc import MemorySalesforce, oauth_form, oauth_token_url
+from app.sfdc import MemorySalesforce, oauth_form, oauth_login_error, oauth_token_url
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = (ROOT / "rules" / "actionable_events.yaml").read_text()
@@ -152,4 +152,7 @@ def test_salesforce_token_url_and_form_are_plain_client_credentials():
     assert form["client_id"] == "abc"
     assert form["client_secret"] == "secret"
     assert parse_qs(urlencode(form))["grant_type"] == ["client_credentials"]
+    assert "Run As" in oauth_login_error(
+        '{"error":"invalid_grant","error_description":"no client credentials user enabled"}'
+    )
 

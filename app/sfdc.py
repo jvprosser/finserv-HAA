@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import date, timedelta
 from typing import Any
@@ -61,6 +62,20 @@ def oauth_form(client_id: str, client_secret: str) -> dict[str, str]:
         "client_id": _trimmed(client_id),
         "client_secret": _trimmed(client_secret),
     }
+
+
+def oauth_login_error(body: str) -> str:
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return body
+    description = str(payload.get("error_description") or payload.get("error") or body)
+    if "no client credentials user enabled" in description.lower():
+        return (
+            "Salesforce client credentials has no Run As user. "
+            "App Manager → Manage (not Edit) → Edit Policies → Client Credentials Flow → Run As."
+        )
+    return description
 
 
 class SalesforceError(Exception):
@@ -145,7 +160,7 @@ class SalesforceRest:
             follow_redirects=False,
         )
         if response.status_code >= 400:
-            raise SalesforceError(f"Salesforce login failed: {response.text}", 502)
+            raise SalesforceError(f"Salesforce login failed: {oauth_login_error(response.text)}", 502)
         body = response.json()
         self._token = body["access_token"]
         self.instance_url = body["instance_url"].rstrip("/")
