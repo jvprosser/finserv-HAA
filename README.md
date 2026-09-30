@@ -79,7 +79,7 @@ These tables are the daily history the rules read. This repo has the DDL only. N
 - `yodlee_transactions.ddl` — Yodlee transactions
 - `yodlee_holdings.ddl` — one row per holding per `as_of_date`
 
-`CLIENT_ID_COLUMN` defaults to `client_id` on transactions and holdings. `DAILY_ID_COLUMN` defaults to `account_id` on `yodlee_held_away_accounts_daily`. `DEMO_MODE=true` serves sample features for client `C123` and does not query Impala.
+`CLIENT_ID_COLUMN` defaults to `client_id` on transactions and holdings. If it is set to `account_id`, the app still filters those tables on `client_id`. `DAILY_ID_COLUMN` defaults to `account_id` on `yodlee_held_away_accounts_daily`. `DEMO_MODE=true` serves sample features for client `C123` and does not query Impala.
 
 Description and category matches in `app/features.py` are demo heuristics. Replace them when the real Yodlee categories are known.
 

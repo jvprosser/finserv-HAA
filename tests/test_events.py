@@ -4,7 +4,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.features import feature_sql
+from app.features import feature_sql, txn_filter_column
 from app.main import create_app
 from app.sfdc import MemorySalesforce
 
@@ -45,6 +45,13 @@ def test_feature_sql_uses_a_bound_client_predicate():
     rendered = _bind_parameters_dict(sql, {"client_id": "P-7015"})
     assert "CAST(client_id AS STRING) = 'P-7015'" in rendered
     assert "CAST(account_id AS STRING) = 'P-7015'" in rendered
+
+    forced = _bind_parameters_dict(
+        feature_sql(txn_filter_column("account_id"), "account_id"),
+        {"client_id": "P-7015"},
+    )
+    assert "FROM retirement_distributions.yodlee_transactions" in forced
+    assert forced.count("CAST(client_id AS STRING) = 'P-7015'") >= 1
     assert "LIKE '%contribution%'" in rendered
     assert "CHECKING" in rendered
 

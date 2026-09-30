@@ -146,6 +146,15 @@ def require_column(name: str) -> str:
     return name
 
 
+def txn_filter_column(client_column: str) -> str:
+    # Daily Iceberg stores P-7015 on account_id. Transactions store it on client_id.
+    # CLIENT_ID_COLUMN=account_id was set so daily rows matched; that must not
+    # filter yodlee_transactions.account_id (BIGINT 707015).
+    if (client_column or "") == "account_id":
+        return "client_id"
+    return client_column
+
+
 def feature_sql(client_column: str, daily_column: str = "account_id") -> str:
     column = require_column(client_column)
     daily_col = require_column(daily_column)
@@ -312,7 +321,7 @@ def features_from_row(row: dict[str, Any]) -> dict[str, Any]:
 def load_features(settings: Settings, client_id: str) -> dict[str, Any]:
     if not settings.client_id_column:
         raise RuntimeError("CLIENT_ID_COLUMN is not set")
-    sql = feature_sql(settings.client_id_column, settings.daily_id_column)
+    sql = feature_sql(txn_filter_column(settings.client_id_column), settings.daily_id_column)
     rows = query(settings, sql, {"client_id": client_id})
     if not rows:
         return {name: None for name in FEATURE_NAMES}
