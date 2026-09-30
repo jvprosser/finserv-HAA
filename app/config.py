@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     impala_http_path: str = "cliservice"
 
     client_id_column: str = "client_id"
+    daily_id_column: str = "account_id"
     api_key: str = ""
     demo_mode: bool = False
 

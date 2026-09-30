@@ -36,7 +36,7 @@ DEMO_MODE=true API_KEY=demo-key .venv/bin/python cml_app.py
 This runs as a project Application. Cloudera AI sends browser traffic to `127.0.0.1` on `CDSW_APP_PORT`. `cml_app.py` binds that address. `cdsw-build.sh` installs `requirements.txt` when the Application is deployed.
 
 1. Put this repository in a Cloudera AI project.
-2. In Project Settings, set `API_KEY` and `IMPALA_HOST` to the Impala coordinator. Leave `DEMO_MODE` unset so account and event reads go to Impala. `CDSW_APP_PORT` is set by the platform. With no `IMPALA_PASSWORD`, the application authenticates with the workload Kerberos ticket (`GSSAPI`). Set `IMPALA_USER` and `IMPALA_PASSWORD` to use LDAP instead. For a Data Warehouse virtual warehouse, also set `IMPALA_PORT=443`, `IMPALA_USE_HTTP_TRANSPORT=true`, and `IMPALA_KRB_HOST` from the JDBC URL. `CLIENT_ID_COLUMN` defaults to `client_id`.
+2. In Project Settings, set `API_KEY` and `IMPALA_HOST` to the Impala coordinator. Leave `DEMO_MODE` unset so account and event reads go to Impala. `CDSW_APP_PORT` is set by the platform. With no `IMPALA_PASSWORD`, the application authenticates with the workload Kerberos ticket (`GSSAPI`). Set `IMPALA_USER` and `IMPALA_PASSWORD` to use LDAP instead. For a Data Warehouse virtual warehouse, also set `IMPALA_PORT=443`, `IMPALA_USE_HTTP_TRANSPORT=true`, and `IMPALA_KRB_HOST` from the JDBC URL. `CLIENT_ID_COLUMN` defaults to `client_id` on transactions and holdings. `DAILY_ID_COLUMN` defaults to `account_id` on the daily table.
 3. Create an Application.
    - Name: Held-away assets
    - Script: `python3 cml_app.py`
@@ -79,7 +79,7 @@ These tables are the daily history the rules read. This repo has the DDL only. N
 - `yodlee_transactions.ddl` — Yodlee transactions
 - `yodlee_holdings.ddl` — one row per holding per `as_of_date`
 
-`CLIENT_ID_COLUMN` defaults to `client_id` on the daily, transaction, and holdings tables. `DEMO_MODE=true` serves sample features for client `C123` and does not query Impala.
+`CLIENT_ID_COLUMN` defaults to `client_id` on transactions and holdings. `DAILY_ID_COLUMN` defaults to `account_id` on `yodlee_held_away_accounts_daily`. `DEMO_MODE=true` serves sample features for client `C123` and does not query Impala.
 
 Description and category matches in `app/features.py` are demo heuristics. Replace them when the real Yodlee categories are known.
 

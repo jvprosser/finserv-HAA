@@ -146,11 +146,13 @@ def require_column(name: str) -> str:
     return name
 
 
-def feature_sql(client_column: str) -> str:
+def feature_sql(client_column: str, daily_column: str = "account_id") -> str:
     column = require_column(client_column)
-    # Client ids such as P-7011 are strings. CAST keeps Impala from rejecting
-    # the comparison when the configured column is numeric (account_id is BIGINT).
+    daily_col = require_column(daily_column)
+    # Client ids such as P-7015 are strings. Daily Iceberg uses account_id STRING.
+    # Transactions and holdings store the same id on client_id; account_id there is BIGINT.
     client_predicate = f"CAST({column} AS STRING) = %(client_id)s"
+    daily_predicate = f"CAST({daily_col} AS STRING) = %(client_id)s"
     return f"""
 SELECT
   txn.txn_rows AS txn_rows,
@@ -211,7 +213,7 @@ CROSS JOIN (
           ) AS end_balance,
           account_type
         FROM {DAILY}
-        WHERE {client_predicate}
+        WHERE {daily_predicate}
           AND {DAILY_DATE} >= date_sub(to_date(now()), 30)
           AND account_type IN ('CHECKING', 'IRA', 'BROKERAGE')
       ) drops
@@ -236,7 +238,7 @@ CROSS JOIN (
       account_status,
       MAX({DAILY_DATE}) OVER () AS latest_day
     FROM {DAILY}
-    WHERE {client_predicate}
+    WHERE {daily_predicate}
   ) history
 ) daily
 CROSS JOIN (
@@ -310,7 +312,7 @@ def features_from_row(row: dict[str, Any]) -> dict[str, Any]:
 def load_features(settings: Settings, client_id: str) -> dict[str, Any]:
     if not settings.client_id_column:
         raise RuntimeError("CLIENT_ID_COLUMN is not set")
-    sql = feature_sql(settings.client_id_column)
+    sql = feature_sql(settings.client_id_column, settings.daily_id_column)
     rows = query(settings, sql, {"client_id": client_id})
     if not rows:
         return {name: None for name in FEATURE_NAMES}
