@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS retirement_distributions.yodlee_held_away_account_daily (
+CREATE TABLE IF NOT EXISTS retirement_distributions.yodlee_held_away_accounts_daily (
     as_of_date              DATE           COMMENT 'Business date of this daily snapshot',
     client_id               STRING         COMMENT 'Client or party key. Rename when the warehouse column is confirmed.',
     account_id              BIGINT         COMMENT 'Yodlee account ID',

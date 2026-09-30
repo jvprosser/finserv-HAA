@@ -133,7 +133,7 @@ REAL_ESTATE_WIRE = """
 )
 """
 
-DAILY = "retirement_distributions.yodlee_held_away_account_daily"
+DAILY = "retirement_distributions.yodlee_held_away_accounts_daily"
 TRANSACTIONS = "retirement_distributions.yodlee_transactions"
 HOLDINGS = "retirement_distributions.yodlee_holdings"
 
