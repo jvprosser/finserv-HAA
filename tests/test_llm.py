@@ -1,7 +1,10 @@
+import json
+
 from app.config import Settings
 from app.llm import (
     BRIEF_SYSTEM,
     advisor_brief,
+    brief_payload,
     chat_completions_url,
     chat_request_body,
     parse_json_object,
@@ -21,7 +24,8 @@ def test_chat_request_turns_nemotron_thinking_off():
     body = chat_request_body(settings, [{"role": "user", "content": "hi"}])
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
     assert body["max_tokens"] == 2048
-    assert "Reply with the advisor note only" in BRIEF_SYSTEM
+    assert "Cite CEL" not in BRIEF_SYSTEM
+    assert "never call an account a savings" in BRIEF_SYSTEM
 
 
 def test_strip_reasoning_drops_scratchpad_before_the_note():
@@ -47,6 +51,23 @@ def test_resolve_api_key_prefers_settings(tmp_path, monkeypatch):
     assert resolve_api_key(settings) == "token"
 
 
+def test_brief_payload_omits_cel_and_event_codes():
+    payload = brief_payload(
+        {
+            "event_name": "CONTRIBUTIONS_STOPPED_OVER_90_DAYS",
+            "cel": "days_since_last_contribution > 90",
+            "description": "Contributions have stopped.",
+            "evidence": {"days_since_last_contribution": 152},
+            "accounts": [{"account_name": "TESTDATA1", "account_type": "401k"}],
+        }
+    )
+    assert "cel" not in payload
+    assert "event_name" not in payload
+    assert payload["situation"] == "Contributions have stopped."
+    assert payload["measurements"] == [{"name": "days since last contribution", "value": 152}]
+    assert payload["accounts"][0]["account_type"] == "401k"
+
+
 def test_advisor_brief_sends_evidence_to_the_model():
     captured = []
 
@@ -68,6 +89,9 @@ def test_advisor_brief_sends_evidence_to_the_model():
     assert "TESTDATA" in user
     assert "401k contribution" in user
     assert "Reply with the advisor note only" in captured[0][0]["content"]
+    assert "cel" not in json.loads(user)
+    assert "event_name" not in json.loads(user)
+    assert json.loads(user)["measurements"][0]["name"] == "days since last contribution"
 
     cleaned = advisor_brief(
         {"event_name": "RETIREMENT_INCOME_COMMENCED", "evidence": {"retirement_income_started": 1}},

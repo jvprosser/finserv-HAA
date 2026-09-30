@@ -161,7 +161,7 @@ def test_matched_event_adds_account_and_transaction_tables(tmp_path):
     description = client.get("/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/sfdc", headers=_auth()).json()[
         "description"
     ]
-    assert "CEL fields" in description
+    assert "Evaluation Criteria" in description
     assert "days_since_last_contribution" in description
     assert "TESTDATA" in description
     assert "401k contribution" in description
@@ -223,7 +223,7 @@ def test_advisor_brief_and_salesforce_description_use_the_draft(tmp_path):
     ]
     assert "Advisor note" in description
     assert "no contribution for 120 days" in description
-    assert description.index("Advisor note") < description.index("CEL fields")
+    assert description.index("Advisor note") < description.index("Evaluation Criteria")
 
 
 def test_advisor_brief_requires_model_config(tmp_path):

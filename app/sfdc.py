@@ -59,7 +59,7 @@ def description_body(
     if evidence:
         tables.append(
             _text_table(
-                "CEL fields",
+                "Evaluation Criteria",
                 ("field", "value"),
                 [{"field": name, "value": value} for name, value in evidence.items()],
             )

@@ -13,9 +13,13 @@ from app.features import FEATURE_NAMES
 JWT_PATH = Path("/tmp/jwt")
 BRIEF_SYSTEM = (
     "You write a short internal note for a wealth advisor. "
-    "Use only facts in the JSON. Do not invent balances, merchants, dates, or events. "
+    "Use only facts in the JSON. Do not invent balances, merchants, dates, account types, or causes. "
+    "Name the account with account_name or displayed_name. "
+    "Use account_type exactly as given; never call an account a savings or checking account "
+    "unless account_type is SAVINGS or CHECKING. "
+    "If a transaction description names a product such as 401k, do not describe the account as a different product. "
+    "Do not mention CEL, rules, event names, JSON, field names, models, or disclaimers. "
     "Do not give investment advice. Write 4 to 6 sentences. "
-    "Cite CEL field names and table values that appear in the JSON. "
     "Reply with the advisor note only. No planning, no restating these instructions, no </think>."
 )
 RULE_SYSTEM = (
@@ -173,21 +177,25 @@ def run_complete(request: Any, messages: list[dict[str, str]]) -> str:
     return complete(request.app.state.settings, messages)
 
 
-def advisor_brief(evaluated: dict[str, Any], complete_fn: Completer) -> str:
-    payload = {
-        "event_name": evaluated.get("event_name"),
-        "description": evaluated.get("description"),
-        "cel": evaluated.get("cel"),
-        "evidence": evaluated.get("evidence") or {},
+def brief_payload(evaluated: dict[str, Any]) -> dict[str, Any]:
+    evidence = evaluated.get("evidence") or {}
+    return {
+        "situation": evaluated.get("description"),
+        "suggested_next_steps": evaluated.get("suggested_next_steps"),
+        "measurements": [
+            {"name": str(name).replace("_", " "), "value": value} for name, value in evidence.items()
+        ],
         "accounts": evaluated.get("accounts") or [],
         "transactions": evaluated.get("transactions") or [],
-        "suggested_next_steps": evaluated.get("suggested_next_steps"),
     }
+
+
+def advisor_brief(evaluated: dict[str, Any], complete_fn: Completer) -> str:
     return strip_reasoning(
         complete_fn(
             [
                 {"role": "system", "content": BRIEF_SYSTEM},
-                {"role": "user", "content": json.dumps(payload)},
+                {"role": "user", "content": json.dumps(brief_payload(evaluated))},
             ]
         )
     )
