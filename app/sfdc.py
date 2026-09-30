@@ -9,6 +9,7 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from app.config import Settings
+from app.features import ACCOUNT_DETAIL_FIELDS, TXN_DETAIL_FIELDS
 
 LABELS = {
     "create_task": "Create task",
@@ -26,7 +27,26 @@ def stable_key(event_name: str, client_id: str) -> str:
     return f"HAA|{event_name}|{client_id}"
 
 
-def description_body(rule_fields: dict[str, str], evidence: dict[str, Any]) -> str:
+def _table_cell(value: Any) -> str:
+    return str(value if value is not None else "").replace("|", "/").replace("\n", " ")
+
+
+def _text_table(title: str, headers: tuple[str, ...] | list[str], rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return ""
+    names = list(headers)
+    lines = [title, " | ".join(names), " | ".join("-" * max(len(name), 3) for name in names)]
+    for row in rows:
+        lines.append(" | ".join(_table_cell(row.get(name)) for name in names))
+    return "\n".join(lines)
+
+
+def description_body(
+    rule_fields: dict[str, str],
+    evidence: dict[str, Any],
+    accounts: list[dict[str, Any]] | None = None,
+    transactions: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [
         rule_fields["description"],
         "",
@@ -34,10 +54,23 @@ def description_body(rule_fields: dict[str, str], evidence: dict[str, Any]) -> s
         "",
         f"Next steps: {rule_fields['suggested_next_steps']}",
     ]
+    tables = []
     if evidence:
-        rendered = ", ".join(f"{name}={value}" for name, value in evidence.items())
-        lines.extend(["", f"Evidence: {rendered}"])
-    return "\n".join(lines)
+        tables.append(
+            _text_table(
+                "CEL fields",
+                ("field", "value"),
+                [{"field": name, "value": value} for name, value in evidence.items()],
+            )
+        )
+    if accounts:
+        tables.append(_text_table("Accounts", ACCOUNT_DETAIL_FIELDS, accounts))
+    if transactions:
+        tables.append(_text_table("Transactions", TXN_DETAIL_FIELDS, transactions))
+    body = "\n".join(lines)
+    if tables:
+        body = body + "\n\n" + "\n\n".join(table for table in tables if table)
+    return body[:32000]
 
 
 def soql_escape(value: str) -> str:
@@ -70,10 +103,19 @@ def oauth_login_error(body: str) -> str:
     except ValueError:
         return body
     description = str(payload.get("error_description") or payload.get("error") or body)
-    if "no client credentials user enabled" in description.lower():
+    lowered = description.lower()
+    if "no client credentials user enabled" in lowered:
         return (
             "Salesforce client credentials has no Run As user. "
             "App Manager → Manage (not Edit) → Edit Policies → Client Credentials Flow → Run As."
+        )
+    if "invalid client credentials" in lowered or lowered == "invalid_client":
+        return (
+            "Salesforce rejected SFDC_CLIENT_ID or SFDC_CLIENT_SECRET. "
+            "Copy Consumer Key and Consumer Secret from the same app that has Run As "
+            "(Connected App: App Manager dropdown View, then Manage Consumer Details; "
+            "External Client App: Settings → OAuth Settings → Consumer Key and Secret), "
+            "set SFDC_LOGIN_URL to that org My Domain, then restart the application."
         )
     return description
 

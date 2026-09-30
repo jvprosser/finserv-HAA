@@ -4,7 +4,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.features import feature_sql, txn_filter_column
+from app.features import feature_sql, pick_supporting, supporting_daily_sql, supporting_txn_sql, txn_filter_column
 from app.main import create_app
 from app.sfdc import MemorySalesforce, oauth_form, oauth_login_error, oauth_token_url
 
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOG = (ROOT / "rules" / "actionable_events.yaml").read_text()
 
 
-def _client(tmp_path, features, sfdc=None, account_field=""):
+def _client(tmp_path, features, sfdc=None, account_field="", supporting=None):
     rules_path = tmp_path / "actionable_events.yaml"
     rules_path.write_text(CATALOG)
     settings = Settings(
@@ -27,6 +27,7 @@ def _client(tmp_path, features, sfdc=None, account_field=""):
     app = create_app(settings)
     app.state.feature_loader = lambda client_id: features
     app.state.sfdc_client = sfdc if sfdc is not None else MemorySalesforce()
+    app.state.supporting_loader = lambda client_id: supporting or {"accounts": [], "transactions": []}
     return TestClient(app), rules_path
 
 
@@ -107,6 +108,92 @@ def test_opportunity_is_created_then_updated_and_readable(tmp_path):
     assert updated.json()["id"] == created.json()["id"]
 
 
+def test_matched_event_adds_account_and_transaction_tables(tmp_path):
+    supporting = {
+        "accounts": [
+            {
+                "account_name": "TESTDATA",
+                "displayed_name": "accountHolder",
+                "account_type": "CHECKING",
+                "balance": 150000,
+                "amount": 0,
+                "max_balance_drop_30d": 1,
+                "idle_cash_days_above_100k": 1,
+                "disconnected_account_count": 0,
+            }
+        ],
+        "transactions": [
+            {
+                "posted_date": "2026-05-12",
+                "amount": 500,
+                "base_type": "CREDIT",
+                "category": "contribution",
+                "description": "401k contribution",
+                "days_since_last_contribution": 1,
+                "competitor_transfer_count_90d": 0,
+            },
+            {
+                "posted_date": "2026-08-20",
+                "amount": 1500,
+                "base_type": "DEBIT",
+                "category": "transfer",
+                "description": "Transfer to high yield HYSA",
+                "days_since_last_contribution": 0,
+                "competitor_transfer_count_90d": 1,
+            },
+        ],
+    }
+    client, _ = _client(tmp_path, {"days_since_last_contribution": 120}, supporting=supporting)
+    matched = _event(
+        client.get("/v1/clients/C1/events", headers=_auth()).json(),
+        "CONTRIBUTIONS_STOPPED_OVER_90_DAYS",
+    )
+    assert matched["accounts"][0]["account_name"] == "TESTDATA"
+    assert matched["accounts"][0]["displayed_name"] == "accountHolder"
+    assert [row["category"] for row in matched["transactions"]] == ["contribution"]
+
+    created = client.post("/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/sfdc", headers=_auth())
+    assert created.status_code == 200
+    description = client.get("/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/sfdc", headers=_auth()).json()[
+        "description"
+    ]
+    assert "CEL fields" in description
+    assert "days_since_last_contribution" in description
+    assert "TESTDATA" in description
+    assert "401k contribution" in description
+    assert "high yield" not in description
+
+
+def test_pick_supporting_keeps_daily_rows_for_balance_rules():
+    accounts, transactions = pick_supporting(
+        ["max_balance_drop_30d", "holdings_value_change_30d"],
+        {
+            "accounts": [
+                {"account_name": "Checking", "account_type": "CHECKING", "max_balance_drop_30d": 1, "balance": 10},
+                {"account_name": "Credit", "account_type": "CREDIT", "max_balance_drop_30d": 0, "balance": 4},
+            ],
+            "transactions": [{"description": "401k contribution", "days_since_last_contribution": 1}],
+        },
+    )
+    assert [row["account_name"] for row in accounts] == ["Checking"]
+    assert transactions == []
+
+
+def test_supporting_sql_binds_the_client_and_reuses_cel_predicates():
+    from impala.interface import _bind_parameters_dict
+
+    daily = _bind_parameters_dict(supporting_daily_sql("account_id"), {"client_id": "P-7015"})
+    assert "CAST(account_id AS STRING) = 'P-7015'" in daily
+    assert "account_name" in daily
+    assert "displayed_name" in daily
+    assert "last_payment_amount AS amount" in daily
+
+    txn = _bind_parameters_dict(supporting_txn_sql("client_id"), {"client_id": "P-7015"})
+    assert "CAST(client_id AS STRING) = 'P-7015'" in txn
+    assert "LIKE '%contribution%'" in txn
+    assert "posted_date" in txn
+
+
 def test_unmatched_event_does_not_call_salesforce(tmp_path):
     client, _ = _client(tmp_path, {"days_since_last_contribution": 10})
     response = client.post("/v1/clients/C1/events/CONTRIBUTIONS_STOPPED_OVER_90_DAYS/sfdc", headers=_auth())
@@ -154,5 +241,8 @@ def test_salesforce_token_url_and_form_are_plain_client_credentials():
     assert parse_qs(urlencode(form))["grant_type"] == ["client_credentials"]
     assert "Run As" in oauth_login_error(
         '{"error":"invalid_grant","error_description":"no client credentials user enabled"}'
+    )
+    assert "SFDC_CLIENT_SECRET" in oauth_login_error(
+        '{"error":"invalid_client","error_description":"invalid client credentials"}'
     )
 

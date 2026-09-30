@@ -85,7 +85,14 @@ Description and category matches in `app/features.py` are demo heuristics. Repla
 
 ## Salesforce
 
-Set `SFDC_LOGIN_URL` to the org My Domain, for example `https://your-domain.my.salesforce.com`, not the Lightning login page and not a URL that already includes `/services/oauth2/token` twice. `SFDC_CLIENT_ID` and `SFDC_CLIENT_SECRET` are the Connected App consumer key and secret.
+Set `SFDC_LOGIN_URL` to the org My Domain, for example `https://your-domain.my.salesforce.com`, not `login.salesforce.com`, not the Lightning host, and not a URL that already includes `/services/oauth2/token` twice. `SFDC_CLIENT_ID` and `SFDC_CLIENT_SECRET` are the Consumer Key and Consumer Secret from the same app that has Run As. After rotating the secret, copy it again and restart the application. `invalid client credentials` means those three values do not belong together.
+
+Salesforce hides the secret behind a verify-your-email step, and the button name depends on the app type in App Manager:
+
+- **Connected** in the Type column: the row's dropdown → **View** (not Manage, not Edit). On that page, under **API (Enable OAuth Settings)**, click **Manage Consumer Details**. Salesforce emails a code; after you enter it, copy Consumer Key and Consumer Secret.
+- **External Client App**: Setup Quick Find → **External Client App Manager**, open the app, **Settings** → expand **OAuth Settings** → **Consumer Key and Secret**. Same email code, then copy both values.
+
+**Manage** is only for policies (Run As). It does not show the secret.
 
 Enabling **Client Credentials Flow** on the Connected App Edit page is not enough. Salesforce still returns `no client credentials user enabled` until a Run As user is saved on a different screen: App Manager → the app's dropdown → **Manage** (not Edit) → **Edit Policies** → **Client Credentials Flow** → **Run As**. Use the lookup, pick an API-enabled user, and save. If the org uses External Client Apps, the same Run As field is under External Client App Manager → Policies.
 

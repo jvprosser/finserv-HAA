@@ -72,6 +72,23 @@
     }
     .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 8px; }
     .evidence { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+    table.detail {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin: 10px 0;
+    }
+    table.detail th, table.detail td {
+      border: 1px solid var(--line);
+      padding: 4px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    pre.desc {
+      white-space: pre-wrap;
+      font: inherit;
+      margin: 0 0 8px;
+    }
     .pill {
       background: #efeae0;
       border-radius: 999px;
@@ -90,7 +107,7 @@
 <body>
   <header>
     <h1>Held-away assets</h1>
-    <p class="sub">Next best actions for one client. Salesforce runs only when a button is used.</p>
+    <p class="sub">Next best actions for one client.</p>
     <nav>
       <button id="tab-client" type="button">Client</button>
       <button id="tab-rules" class="secondary" type="button" aria-pressed="false">Rules</button>
@@ -237,9 +254,20 @@
         "<p>" + escapeHtml(event.business_opportunity) + "</p>" +
         "<p class='sub'>" + escapeHtml(event.suggested_next_steps) + "</p>" +
         "<div class='evidence'>" + evidence + "</div>" +
+        detailTable("Accounts", ["account_name", "displayed_name", "account_type", "balance", "amount"], event.accounts || []) +
+        detailTable("Transactions", ["posted_date", "amount", "base_type", "category", "description"], event.transactions || []) +
         "<div class='actions'><button type='button' " + disabled + ">" + label + "</button>" +
         "<span class='meta action-msg'></span></div>" +
         "<div class='record'></div></article>";
+    }
+
+    function detailTable(title, headers, rows) {
+      if (!rows.length) return "";
+      const head = headers.map((name) => "<th>" + escapeHtml(name) + "</th>").join("");
+      const body = rows.map((row) =>
+        "<tr>" + headers.map((name) => "<td>" + escapeHtml(row[name] == null ? "" : row[name]) + "</td>").join("") + "</tr>"
+      ).join("");
+      return "<h2>" + title + "</h2><table class='detail'><thead><tr>" + head + "</tr></thead><tbody>" + body + "</tbody></table>";
     }
 
     async function loadRecord(event, node) {
@@ -268,15 +296,15 @@
       if (record.sobject === "Opportunity") {
         return "<div class='record'><p><strong>Opportunity</strong> " + escapeHtml(record.name || "") + "</p>" +
           "<p>Stage " + escapeHtml(record.stage_name || "") + " · close " + escapeHtml(record.close_date || "") + "</p>" +
-          "<p>" + escapeHtml(record.description || "") + "</p>" + link + "</div>";
+          "<pre class='desc'>" + escapeHtml(record.description || "") + "</pre>" + link + "</div>";
       }
       if (record.sobject === "Task") {
         return "<div class='record'><p><strong>Task</strong> " + escapeHtml(record.subject || "") + "</p>" +
           "<p>Status " + escapeHtml(record.status || "") + "</p>" +
-          "<p>" + escapeHtml(record.description || "") + "</p>" + link + "</div>";
+          "<pre class='desc'>" + escapeHtml(record.description || "") + "</pre>" + link + "</div>";
       }
       return "<div class='record'><p><strong>Account</strong> " + escapeHtml(record.id || "") + "</p>" +
-        "<p>" + escapeHtml(record.description || "") + "</p>" + link + "</div>";
+        "<pre class='desc'>" + escapeHtml(record.description || "") + "</pre>" + link + "</div>";
     }
 
     async function loadRules() {

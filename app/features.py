@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from app.config import Settings
@@ -155,6 +157,40 @@ def txn_filter_column(client_column: str) -> str:
     return client_column
 
 
+ACCOUNT_DETAIL_FIELDS = (
+    "account_name",
+    "displayed_name",
+    "account_type",
+    "balance",
+    "amount",
+)
+TXN_DETAIL_FIELDS = (
+    "posted_date",
+    "amount",
+    "base_type",
+    "category",
+    "description",
+)
+TXN_FEATURE_PREDICATES = {
+    "days_since_last_contribution": CONTRIBUTION,
+    "competitor_transfer_count_90d": COMPETITOR,
+    "retirement_income_started": RETIREMENT_INCOME,
+    "payroll_source_changed": PAYROLL,
+    "cd_maturity_inflow_amount": CD_INFLOW,
+    "education_debit_count_90d": EDUCATION,
+    "margin_interest_debit_count_90d": MARGIN_INTEREST,
+    "large_real_estate_wire_amount": REAL_ESTATE_WIRE,
+    "mortgage_payments_stopped": MORTGAGE,
+}
+DAILY_FEATURE_PREDICATES = {
+    "max_balance_drop_30d": "account_type IN ('CHECKING', 'IRA', 'BROKERAGE')",
+    "idle_cash_days_above_100k": (
+        "container = 'bank' AND account_type IN ('CHECKING', 'SAVINGS') AND balance_amount > 100000"
+    ),
+    "disconnected_account_count": "UPPER(COALESCE(account_status, '')) != 'ACTIVE'",
+}
+
+
 def feature_sql(client_column: str, daily_column: str = "account_id") -> str:
     column = require_column(client_column)
     daily_col = require_column(daily_column)
@@ -268,6 +304,123 @@ CROSS JOIN (
   ) span
 ) holdings
 """.strip()
+
+
+def supporting_daily_sql(daily_column: str = "account_id") -> str:
+    daily_col = require_column(daily_column)
+    flags = ",\n  ".join(
+        f"CASE WHEN {predicate} THEN 1 ELSE 0 END AS {name}"
+        for name, predicate in DAILY_FEATURE_PREDICATES.items()
+    )
+    daily_predicate = f"CAST({daily_col} AS STRING) = %(client_id)s"
+    return f"""
+SELECT
+  account_name,
+  displayed_name,
+  account_type,
+  balance_amount AS balance,
+  last_payment_amount AS amount,
+  {flags}
+FROM (
+  SELECT
+    account_name,
+    displayed_name,
+    account_type,
+    account_status,
+    container,
+    balance_amount,
+    last_payment_amount,
+    ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY {DAILY_DATE} DESC) AS rn
+  FROM {DAILY}
+  WHERE {daily_predicate}
+) snap
+WHERE rn = 1
+LIMIT 50
+""".strip()
+
+
+def supporting_txn_sql(client_column: str) -> str:
+    column = require_column(client_column)
+    flags = ",\n  ".join(
+        f"CASE WHEN {predicate} THEN 1 ELSE 0 END AS {name}"
+        for name, predicate in TXN_FEATURE_PREDICATES.items()
+    )
+    any_match = " OR ".join(f"({predicate})" for predicate in TXN_FEATURE_PREDICATES.values())
+    client_predicate = f"CAST({column} AS STRING) = %(client_id)s"
+    return f"""
+SELECT
+  posted_date,
+  amount,
+  base_type,
+  category,
+  description,
+  {flags}
+FROM {TRANSACTIONS}
+WHERE {client_predicate}
+  AND ({any_match})
+ORDER BY posted_date DESC
+LIMIT 100
+""".strip()
+
+
+def _cell_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return f"{value:.4f}"
+    if isinstance(value, float):
+        return f"{Decimal(str(value)):.4f}"
+    return str(value)
+
+
+def _public_rows(rows: list[dict[str, Any]], fields: tuple[str, ...]) -> list[dict[str, str]]:
+    return [{name: _cell_value(row.get(name)) for name in fields} for row in rows]
+
+
+def _flagged(row: dict[str, Any], names: set[str]) -> bool:
+    return any(int(row.get(name) or 0) for name in names)
+
+
+def pick_supporting(
+    feature_names: list[str],
+    supporting: dict[str, list[dict[str, Any]]] | None,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    payload = supporting or {}
+    wanted = set(feature_names)
+    daily_keys = wanted & set(DAILY_FEATURE_PREDICATES)
+    txn_keys = wanted & set(TXN_FEATURE_PREDICATES)
+    accounts = list(payload.get("accounts") or [])
+    transactions = list(payload.get("transactions") or [])
+    if daily_keys:
+        matched_accounts = [row for row in accounts if _flagged(row, daily_keys)]
+        accounts = matched_accounts or accounts
+    if txn_keys:
+        transactions = [row for row in transactions if _flagged(row, txn_keys)]
+    else:
+        transactions = []
+    return _public_rows(accounts[:15], ACCOUNT_DETAIL_FIELDS), _public_rows(
+        transactions[:25], TXN_DETAIL_FIELDS
+    )
+
+
+def load_supporting(settings: Settings, client_id: str) -> dict[str, list[dict[str, Any]]]:
+    if not settings.client_id_column:
+        return {"accounts": [], "transactions": []}
+    accounts = query(
+        settings,
+        supporting_daily_sql(settings.daily_id_column),
+        {"client_id": client_id},
+    )
+    transactions = query(
+        settings,
+        supporting_txn_sql(txn_filter_column(settings.client_id_column)),
+        {"client_id": client_id},
+    )
+    return {"accounts": accounts, "transactions": transactions}
 
 
 def _int(value: Any) -> int | None:

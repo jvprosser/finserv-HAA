@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.auth import require_api_key
 from app.config import Settings
 from app.db import DataUnavailable
-from app.features import MONEY_FEATURES
+from app.features import MONEY_FEATURES, pick_supporting
 from app.rules import Rule, RuleValidationError, load_rules
 from app.sfdc import (
     LABELS,
@@ -83,7 +83,13 @@ def _button(rule: Rule, client_id: str, status: str, settings: Settings) -> dict
     }
 
 
-def evaluate_rule(rule: Rule, features: dict[str, Any], client_id: str, settings: Settings) -> dict[str, Any]:
+def evaluate_rule(
+    rule: Rule,
+    features: dict[str, Any],
+    client_id: str,
+    settings: Settings,
+    supporting: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     import celpy
 
     missing = [name for name in rule.features if features.get(name) is None]
@@ -120,6 +126,10 @@ def evaluate_rule(rule: Rule, features: dict[str, Any], client_id: str, settings
             "sfdc_action": _button(rule, client_id, status, settings),
         }
     )
+    if matched:
+        accounts, transactions = pick_supporting(rule.features, supporting)
+        item["accounts"] = accounts
+        item["transactions"] = transactions
     return item
 
 
@@ -147,8 +157,23 @@ def _sfdc(request: Request):
     raise HTTPException(status_code=503, detail="Salesforce is not configured")
 
 
-def _fields(rule: Rule, key: str, evidence: dict[str, Any], settings: Settings) -> dict[str, Any]:
-    body = description_body(rule.public(), evidence)
+def _supporting(request: Request, client_id: str) -> dict[str, Any]:
+    loader = getattr(request.app.state, "supporting_loader", None)
+    if loader is None:
+        return {"accounts": [], "transactions": []}
+    try:
+        return loader(client_id)
+    except DataUnavailable:
+        return {"accounts": [], "transactions": []}
+
+
+def _fields(rule: Rule, key: str, evaluated: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    body = description_body(
+        rule.public(),
+        evaluated.get("evidence") or {},
+        evaluated.get("accounts") or [],
+        evaluated.get("transactions") or [],
+    )
     if rule.action == "create_opportunity":
         return opportunity_fields(key, body, settings.sfdc_opportunity_stage)
     if rule.action == "create_task":
@@ -164,8 +189,9 @@ def client_events(
 ) -> dict[str, Any]:
     settings = request.app.state.settings
     features = _features(request, client_id)
+    supporting = _supporting(request, client_id)
     events = [
-        evaluate_rule(rule, features, client_id, settings)
+        evaluate_rule(rule, features, client_id, settings, supporting)
         for rule in _rules(settings)
     ]
     if matched_only:
@@ -185,11 +211,13 @@ def create_sfdc_record(client_id: str, event_name: str, request: Request) -> dic
         raise HTTPException(status_code=404, detail="Unknown event")
     if rule.action == "update_account" and not settings.sfdc_account_external_id_field:
         raise HTTPException(status_code=422, detail="SFDC_ACCOUNT_EXTERNAL_ID_FIELD is not set")
-    evaluated = evaluate_rule(rule, _features(request, client_id), client_id, settings)
+    evaluated = evaluate_rule(
+        rule, _features(request, client_id), client_id, settings, _supporting(request, client_id)
+    )
     if not evaluated["matched"]:
         raise HTTPException(status_code=409, detail="Event is not matched")
     key = record_key(rule.action, event_name, client_id)
-    fields = _fields(rule, key, evaluated.get("evidence") or {}, settings)
+    fields = _fields(rule, key, evaluated, settings)
     try:
         result, record_id = _sfdc(request).upsert(SOBJECTS[rule.action], key, fields, client_id)
     except SalesforceError as exc:

@@ -8,9 +8,9 @@ from fastapi.responses import FileResponse
 from app.accounts import ImpalaAccounts, router as accounts_router
 from app.config import Settings
 from app.db import DataUnavailable, query
-from app.demo_data import DemoAccounts, demo_features
+from app.demo_data import DemoAccounts, demo_features, demo_supporting
 from app.events import router as events_router
-from app.features import load_features
+from app.features import load_features, load_supporting
 from app.rules import router as rules_router
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -23,12 +23,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.demo_mode:
         app.state.account_source = DemoAccounts()
         app.state.feature_loader = demo_features
+        app.state.supporting_loader = demo_supporting
     else:
         app.state.account_source = ImpalaAccounts(settings)
         if settings.client_id_column:
             app.state.feature_loader = lambda client_id: load_features(settings, client_id)
+            app.state.supporting_loader = lambda client_id: load_supporting(settings, client_id)
         else:
             app.state.feature_loader = None
+            app.state.supporting_loader = None
 
     @app.get("/health")
     def health() -> dict[str, str]:

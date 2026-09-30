@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -145,6 +145,19 @@ DEMO_ACCOUNTS = [
         current_balance_currency="EUR",
         available_balance_currency="EUR",
     ),
+    _account(
+        account_id=1005,
+        provider_id="schwab",
+        provider_name="Schwab",
+        account_number="****5501",
+        account_name="Old IRA",
+        displayed_name="Closed IRA",
+        container="investment",
+        account_type="IRA",
+        account_status="INACTIVE",
+        balance_amount=Decimal("0.0000"),
+        current_balance_amount=Decimal("0.0000"),
+    ),
 ]
 
 
@@ -157,6 +170,69 @@ def _matches(row: dict[str, Any], filters: dict[str, Any]) -> bool:
     if day and str(row["last_updated"])[:10] != day:
         return False
     return True
+
+
+def _daily_row(row: dict[str, Any]) -> dict[str, Any]:
+    account_type = row["account_type"]
+    container = row["container"]
+    balance = row["balance_amount"] or Decimal("0")
+    return {
+        "account_name": row["account_name"],
+        "displayed_name": row["displayed_name"],
+        "account_type": account_type,
+        "balance": balance,
+        "amount": row.get("last_payment_amount"),
+        "max_balance_drop_30d": 1 if account_type in {"CHECKING", "IRA", "BROKERAGE"} else 0,
+        "idle_cash_days_above_100k": 1
+        if container == "bank" and account_type in {"CHECKING", "SAVINGS"} and balance > 100000
+        else 0,
+        "disconnected_account_count": 1 if str(row.get("account_status") or "").upper() != "ACTIVE" else 0,
+    }
+
+
+DEMO_TRANSACTIONS = [
+    {
+        "posted_date": date.today() - timedelta(days=120),
+        "amount": Decimal("500.0000"),
+        "base_type": "CREDIT",
+        "category": "contribution",
+        "description": "401k contribution",
+        "days_since_last_contribution": 1,
+        "competitor_transfer_count_90d": 0,
+        "retirement_income_started": 0,
+        "payroll_source_changed": 0,
+        "cd_maturity_inflow_amount": 0,
+        "education_debit_count_90d": 0,
+        "margin_interest_debit_count_90d": 0,
+        "large_real_estate_wire_amount": 0,
+        "mortgage_payments_stopped": 0,
+    },
+    {
+        "posted_date": date.today() - timedelta(days=40),
+        "amount": Decimal("1500.0000"),
+        "base_type": "DEBIT",
+        "category": "transfer",
+        "description": "Transfer to high yield HYSA",
+        "days_since_last_contribution": 0,
+        "competitor_transfer_count_90d": 1,
+        "retirement_income_started": 0,
+        "payroll_source_changed": 0,
+        "cd_maturity_inflow_amount": 0,
+        "education_debit_count_90d": 0,
+        "margin_interest_debit_count_90d": 0,
+        "large_real_estate_wire_amount": 0,
+        "mortgage_payments_stopped": 0,
+    },
+]
+
+
+def demo_supporting(client_id: str) -> dict[str, list[dict[str, Any]]]:
+    if client_id != DEMO_CLIENT:
+        return {"accounts": [], "transactions": []}
+    return {
+        "accounts": [_daily_row(row) for row in DEMO_ACCOUNTS],
+        "transactions": DEMO_TRANSACTIONS,
+    }
 
 
 class DemoAccounts:
