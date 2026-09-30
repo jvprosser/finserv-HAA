@@ -15,14 +15,31 @@ BRIEF_SYSTEM = (
     "You write a short internal note for a wealth advisor. "
     "Use only facts in the JSON. Do not invent balances, merchants, dates, or events. "
     "Do not give investment advice. Write 4 to 6 sentences. "
-    "Cite CEL field names and table values that appear in the JSON."
+    "Cite CEL field names and table values that appear in the JSON. "
+    "Reply with the advisor note only. No planning, no restating these instructions, no </think>."
 )
 RULE_SYSTEM = (
     "You propose a CEL expression for one named wealth event. "
     "Reply with JSON only, no markdown: {\"cel\": \"...\", \"features\": [\"...\"]}. "
     "Use only these feature names: "
     + ", ".join(FEATURE_NAMES)
-    + ". The CEL must compile. Do not change the event name."
+    + ". The CEL must compile. Do not change the event name. "
+    "Reply with the JSON only. No planning, no restating these instructions, no </think>."
+)
+PLANNING_PREFIXES = (
+    "we need to",
+    "we have json",
+    "we must",
+    "we can say",
+    "we'll ",
+    "let's ",
+    "lets ",
+    "make sure to",
+    "so we need",
+    "so we can",
+    "write 4",
+    "write 5",
+    "write 6",
 )
 
 
@@ -59,6 +76,42 @@ def chat_completions_url(base_url: str) -> str:
     return f"{base}/chat/completions"
 
 
+def _is_planning_line(line: str) -> bool:
+    lowered = line.strip().lower()
+    if not lowered:
+        return True
+    return any(lowered.startswith(prefix) for prefix in PLANNING_PREFIXES)
+
+
+def strip_reasoning(text: str) -> str:
+    raw = text or ""
+    marker = "</think>"
+    found = raw.lower().rfind(marker)
+    if found >= 0:
+        raw = raw[found + len(marker) :]
+    raw = raw.replace("<think>", "").strip()
+    kept: list[str] = []
+    skipping = True
+    for line in raw.splitlines():
+        if skipping and _is_planning_line(line):
+            continue
+        skipping = False
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def chat_request_body(settings: Settings, messages: list[dict[str, str]]) -> dict[str, Any]:
+    return {
+        "model": settings.llm_model_id.strip(),
+        "messages": messages,
+        "temperature": 0.2,
+        "top_p": 0.7,
+        "max_tokens": settings.llm_max_tokens,
+        "stream": False,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+
 def parse_json_object(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
     if raw.startswith("```"):
@@ -89,14 +142,7 @@ def complete(settings: Settings, messages: list[dict[str, str]]) -> str:
                 "Authorization": f"Bearer {resolve_api_key(settings)}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": settings.llm_model_id.strip(),
-                "messages": messages,
-                "temperature": 0.2,
-                "top_p": 0.7,
-                "max_tokens": settings.llm_max_tokens,
-                "stream": False,
-            },
+            json=chat_request_body(settings, messages),
             timeout=settings.llm_timeout,
         )
     except httpx.HTTPError as exc:
@@ -105,12 +151,16 @@ def complete(settings: Settings, messages: list[dict[str, str]]) -> str:
         raise LLMError(f"LLM request failed: {response.text}", 502)
     try:
         body = response.json()
-        content = body["choices"][0]["message"]["content"]
+        message = body["choices"][0]["message"]
+        content = message.get("content") if isinstance(message, dict) else None
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise LLMError("LLM response was missing content", 502) from exc
-    if not isinstance(content, str) or not content.strip():
+    if not isinstance(content, str):
         raise LLMError("LLM response was missing content", 502)
-    return content.strip()
+    cleaned = strip_reasoning(content)
+    if not cleaned:
+        raise LLMError("LLM response was missing content", 502)
+    return cleaned
 
 
 Completer = Callable[[list[dict[str, str]]], str]
@@ -133,11 +183,13 @@ def advisor_brief(evaluated: dict[str, Any], complete_fn: Completer) -> str:
         "transactions": evaluated.get("transactions") or [],
         "suggested_next_steps": evaluated.get("suggested_next_steps"),
     }
-    return complete_fn(
-        [
-            {"role": "system", "content": BRIEF_SYSTEM},
-            {"role": "user", "content": json.dumps(payload)},
-        ]
+    return strip_reasoning(
+        complete_fn(
+            [
+                {"role": "system", "content": BRIEF_SYSTEM},
+                {"role": "user", "content": json.dumps(payload)},
+            ]
+        )
     )
 
 
@@ -155,7 +207,7 @@ def rule_draft(event_name: str, prompt: str, current_cel: str, complete_fn: Comp
             {"role": "user", "content": user},
         ]
     )
-    payload = parse_json_object(raw)
+    payload = parse_json_object(strip_reasoning(raw))
     cel = str(payload.get("cel") or "").strip()
     features = payload.get("features")
     if not cel:

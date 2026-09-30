@@ -104,7 +104,7 @@ Without those credentials, demo mode keeps created records in memory so the page
 
 ## LLM
 
-Set `LLM_BASE_URL` to the Cloudera model-serving OpenAI `/v1` URL and `LLM_MODEL_ID` to the served model, for example `nvidia/nemotron-3-super-120b-a12b`. Set `LLM_API_KEY` on the Application to the serving token. In a Workbench session you can leave `LLM_API_KEY` empty and the app will use `CDP_TOKEN` or `/tmp/jwt` `access_token`. CEL still decides whether an event matched. The model only drafts the advisor note and a CEL proposal.
+Set `LLM_BASE_URL` to the Cloudera model-serving OpenAI `/v1` URL and `LLM_MODEL_ID` to the served model, for example `nvidia/nemotron-3-super-120b-a12b`. Set `LLM_API_KEY` on the Application to the serving token. In a Workbench session you can leave `LLM_API_KEY` empty and the app will use `CDP_TOKEN` or `/tmp/jwt` `access_token`. Requests send `chat_template_kwargs.enable_thinking=false` so Nemotron answers without a scratchpad; remaining `</think>` text is stripped. CEL still decides whether an event matched. The model only drafts the advisor note and a CEL proposal.
 
 ## Tests
 

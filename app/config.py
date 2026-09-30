@@ -41,6 +41,6 @@ class Settings(BaseSettings):
     llm_model_id: str = "nvidia/nemotron-3-super-120b-a12b"
     llm_api_key: str = ""
     llm_timeout: float = 60.0
-    llm_max_tokens: int = 512
+    llm_max_tokens: int = 2048
 
     rules_path: Path = ROOT / "rules" / "actionable_events.yaml"
